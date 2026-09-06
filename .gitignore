@@ -1,0 +1,11 @@
+# C2P Frontend
+node_modules/
+.env
+.env.local
+.DS_Store
+Thumbs.db
+*.log
+dist/
+build/
+.vscode/
+.idea/
