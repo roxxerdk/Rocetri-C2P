@@ -9,6 +9,9 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="styles.css" />
   <link rel="stylesheet" href="project.css" />
+  <link rel="stylesheet" href="extraction.css" />
+  <link rel="stylesheet" href="planning.css" />
+  <link rel="stylesheet" href="report.css" />
 </head>
 <body>
 
@@ -256,71 +259,392 @@
       </section>
 
       <!-- ════════════════════
-           PAGE: EXTRACTION (placeholder)
+           PAGE: EXTRACTION & VALIDATION
       ════════════════════ -->
       <section class="page-section" id="page-extraction">
+
+        <!-- Header -->
         <div class="page-header">
           <div class="page-header__left">
-            <h2 class="page-section-title">Extraction & Validation</h2>
+            <h2 class="page-section-title">Extraction &amp; Validation</h2>
             <p class="page-section-sub">AI-extracted parameters from the CAED diagram</p>
           </div>
           <div class="page-header__right">
-            <span class="version-badge" id="headerVersionBadge2">v1</span>
+            <span class="version-badge">v1</span>
           </div>
         </div>
-        <div class="placeholder-panel">
-          <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round">
-            <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
-          </svg>
-          <p>Extraction results will appear here once the CAED diagram is uploaded and processed.</p>
+
+        <!-- ── Main 2-column layout: Bot | Content ── -->
+        <div class="ext-layout">
+
+          <!-- ── LEFT: AI Bot Panel ── -->
+          <div class="ext-bot-panel">
+            <div class="ext-bot-header">
+              <div class="ext-bot-avatar">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/><circle cx="12" cy="16" r="1"/>
+                </svg>
+              </div>
+              <span class="ext-bot-name">C2P Bot</span>
+              <span class="ext-bot-status">online</span>
+            </div>
+
+            <!-- Chat messages -->
+            <div class="ext-bot-messages" id="botMessages">
+              <div class="bot-msg bot-msg--ai">
+                <p>CAED diagram processed. I've extracted <strong>12 parameters</strong> from the uploaded drawing. Review them on the right and validate.</p>
+              </div>
+              <div class="bot-msg bot-msg--ai">
+                <p>Click any row in the Features table to inspect or correct a value.</p>
+              </div>
+            </div>
+
+            <!-- Input -->
+            <div class="ext-bot-input-wrap">
+              <input class="ext-bot-input" id="botInput" type="text" placeholder="Ask C2P Bot…" onkeydown="sendBotMessage(event)" />
+              <button class="ext-bot-send" onclick="sendBotMessage({key:'Enter'})">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/>
+                </svg>
+              </button>
+            </div>
+          </div>
+
+          <!-- ── RIGHT: Features + CAED preview ── -->
+          <div class="ext-right-col">
+
+            <!-- Features Extracted table -->
+            <div class="ext-features-panel">
+              <div class="ext-features-header">
+                <span class="ext-features-title">Features Extracted</span>
+                <div class="ext-features-actions">
+                  <span class="ext-feature-count">12 parameters</span>
+                  <button class="ext-sort-btn" title="Sort">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <line x1="12" y1="5" x2="12" y2="19"/><polyline points="19 12 12 19 5 12"/>
+                    </svg>
+                  </button>
+                </div>
+              </div>
+
+              <div class="ext-features-table">
+                <div class="ext-table-head">
+                  <span>Parameter</span>
+                  <span>Extracted Value</span>
+                  <span>Unit</span>
+                  <span>Confidence</span>
+                </div>
+
+                <div class="ext-table-body" id="featuresTableBody">
+                  <!-- Row template, populated dynamically -->
+                  <div class="ext-row" onclick="selectRow(this)">
+                    <span class="ext-param">Span Length</span>
+                    <span class="ext-value editable" contenteditable="false">24.50</span>
+                    <span class="ext-unit">m</span>
+                    <span class="ext-conf ext-conf--high">97%</span>
+                  </div>
+                  <div class="ext-row" onclick="selectRow(this)">
+                    <span class="ext-param">Beam Depth</span>
+                    <span class="ext-value editable" contenteditable="false">1.20</span>
+                    <span class="ext-unit">m</span>
+                    <span class="ext-conf ext-conf--high">94%</span>
+                  </div>
+                  <div class="ext-row" onclick="selectRow(this)">
+                    <span class="ext-param">Flange Width</span>
+                    <span class="ext-value editable" contenteditable="false">0.45</span>
+                    <span class="ext-unit">m</span>
+                    <span class="ext-conf ext-conf--med">81%</span>
+                  </div>
+                  <div class="ext-row" onclick="selectRow(this)">
+                    <span class="ext-param">Web Thickness</span>
+                    <span class="ext-value editable" contenteditable="false">0.018</span>
+                    <span class="ext-unit">m</span>
+                    <span class="ext-conf ext-conf--high">92%</span>
+                  </div>
+                  <div class="ext-row" onclick="selectRow(this)">
+                    <span class="ext-param">Support Spacing</span>
+                    <span class="ext-value editable" contenteditable="false">6.00</span>
+                    <span class="ext-unit">m</span>
+                    <span class="ext-conf ext-conf--high">98%</span>
+                  </div>
+                  <div class="ext-row" onclick="selectRow(this)">
+                    <span class="ext-param">Load Class</span>
+                    <span class="ext-value editable" contenteditable="false">HA + HB</span>
+                    <span class="ext-unit">—</span>
+                    <span class="ext-conf ext-conf--low">62%</span>
+                  </div>
+                  <div class="ext-row" onclick="selectRow(this)">
+                    <span class="ext-param">Deck Thickness</span>
+                    <span class="ext-value editable" contenteditable="false">0.230</span>
+                    <span class="ext-unit">m</span>
+                    <span class="ext-conf ext-conf--high">89%</span>
+                  </div>
+                  <div class="ext-row" onclick="selectRow(this)">
+                    <span class="ext-param">Steel Grade</span>
+                    <span class="ext-value editable" contenteditable="false">S355</span>
+                    <span class="ext-unit">—</span>
+                    <span class="ext-conf ext-conf--med">76%</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- CAED Image Preview -->
+            <div class="ext-caed-preview">
+              <div class="ext-caed-preview-header">
+                <span class="ext-features-title">CAED Image</span>
+                <span class="ext-caed-hint">Reference view</span>
+              </div>
+              <div class="ext-caed-img-area" id="caedPreviewArea">
+                <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round">
+                  <rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/>
+                </svg>
+                <p class="ext-caed-no-img">No diagram uploaded yet — go to CAED tab to upload.</p>
+              </div>
+            </div>
+
+          </div><!-- end .ext-right-col -->
+
+        </div><!-- end .ext-layout -->
+
+        <!-- ── Validation Bar ── -->
+        <div class="ext-validation-bar">
+          <div class="ext-validation-checks">
+            <label class="ext-check-item">
+              <input type="checkbox" id="checkVerified" onchange="updateValidationState()" />
+              <span class="ext-check-box">
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+                  <polyline points="20 6 9 17 4 12"/>
+                </svg>
+              </span>
+              <span class="ext-check-label">Verified</span>
+            </label>
+            <label class="ext-check-item">
+              <input type="checkbox" id="checkEditing" onchange="updateValidationState()" />
+              <span class="ext-check-box ext-check-box--edit">
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+                  <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+                </svg>
+              </span>
+              <span class="ext-check-label">Editing</span>
+            </label>
+            <span class="ext-validation-status" id="validationStatus">— Not validated</span>
+          </div>
+          <div class="ext-validation-actions">
+            <button class="ext-btn-edit" onclick="toggleEditing()">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+                <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+              </svg>
+              Edit Values
+            </button>
+            <button class="ext-btn-confirm" onclick="confirmValidation()">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="20 6 9 17 4 12"/>
+              </svg>
+              Confirm &amp; Proceed
+            </button>
+          </div>
         </div>
+
       </section>
 
       <!-- ════════════════════
-           PAGE: PROCESS PLANNING (placeholder)
+           PAGE: PROCESS PLANNING
       ════════════════════ -->
       <section class="page-section" id="page-planning">
+
+        <!-- Header -->
         <div class="page-header">
           <div class="page-header__left">
             <h2 class="page-section-title">Process Planning</h2>
-            <p class="page-section-sub">AI-generated process plan based on extracted parameters</p>
+            <p class="page-section-sub">Define and sequence the manufacturing operations</p>
           </div>
           <div class="page-header__right">
             <span class="version-badge">v1</span>
           </div>
         </div>
-        <div class="placeholder-panel">
-          <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>
-          </svg>
-          <p>Process planning output will appear here after extraction is validated.</p>
-        </div>
+
+        <!-- ── Process Steps Panel ── -->
+        <div class="pp-steps-panel">
+
+          <!-- Panel toolbar -->
+          <div class="pp-panel-toolbar">
+            <div class="pp-toolbar-left">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>
+              </svg>
+              <span class="pp-panel-title">Operations Sequence</span>
+              <span class="pp-step-count" id="ppStepCount">0 steps</span>
+            </div>
+            <div class="pp-toolbar-right">
+              <button class="pp-btn-secondary" onclick="clearAllSteps()" title="Clear all steps">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/>
+                </svg>
+                Clear
+              </button>
+              <button class="pp-btn-add" onclick="addStep()">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+                </svg>
+                Add Step
+              </button>
+            </div>
+          </div>
+
+          <!-- Column headers -->
+          <div class="pp-col-head">
+            <span class="pp-col pp-col--drag"></span>
+            <span class="pp-col pp-col--num">#</span>
+            <span class="pp-col pp-col--op">Operation</span>
+            <span class="pp-col pp-col--machine">Machine / Process</span>
+            <span class="pp-col pp-col--tool">Tool / Fixture</span>
+            <span class="pp-col pp-col--params">Parameters</span>
+            <span class="pp-col pp-col--duration">Duration</span>
+            <span class="pp-col pp-col--action"></span>
+          </div>
+
+          <!-- Steps list -->
+          <div class="pp-steps-list" id="ppStepsList">
+            <!-- Empty state -->
+            <div class="pp-empty-state" id="ppEmptyState">
+              <svg width="38" height="38" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/>
+                <line x1="3" y1="15" x2="21" y2="15"/><line x1="9" y1="9" x2="9" y2="21"/>
+              </svg>
+              <p>No operations yet.</p>
+              <span>Click <strong>Add Step</strong> to define the first manufacturing operation.</span>
+            </div>
+          </div>
+
+        </div><!-- end .pp-steps-panel -->
+
+        <!-- ── Bottom row: Bot strip + Report actions ── -->
+        <div class="pp-bottom-row">
+
+          <!-- Bot strip (collapsible) -->
+          <div class="pp-bot-strip" id="ppBotStrip">
+            <div class="pp-bot-strip-header" onclick="togglePpBot()">
+              <div class="ext-bot-avatar" style="width:24px;height:24px;">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/><circle cx="12" cy="16" r="1"/>
+                </svg>
+              </div>
+              <span class="pp-bot-label">C2P Bot</span>
+              <span class="ext-bot-status" style="margin-left:auto;">online</span>
+              <svg class="pp-bot-chevron" id="ppBotChevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="18 15 12 9 6 15"/>
+              </svg>
+            </div>
+            <div class="pp-bot-body" id="ppBotBody" style="display:none;">
+              <div class="pp-bot-messages" id="ppBotMessages">
+                <div class="bot-msg bot-msg--ai">
+                  <p>Ready to assist with process planning. Add operations above and I'll help sequence and optimise them.</p>
+                </div>
+              </div>
+              <div class="ext-bot-input-wrap" style="border-top:1px solid var(--border-faint);">
+                <input class="ext-bot-input" id="ppBotInput" type="text" placeholder="Ask C2P Bot…" onkeydown="sendPpBotMessage(event)" />
+                <button class="ext-bot-send" onclick="sendPpBotMessage({key:'Enter'})">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/>
+                  </svg>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Report actions -->
+          <div class="pp-report-actions">
+            <div class="pp-report-info">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>
+              </svg>
+              <span class="pp-report-info-text">Generate final report from<br>this process plan</span>
+            </div>
+            <div class="pp-report-btns">
+              <button class="pp-btn-create-report" onclick="createReport()">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>
+                  <line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/>
+                </svg>
+                Create Report
+              </button>
+              <button class="pp-btn-download" onclick="downloadPlan()" title="Download plan as CSV">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                  <polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+                </svg>
+              </button>
+            </div>
+          </div>
+
+        </div><!-- end .pp-bottom-row -->
+
       </section>
 
       <!-- ════════════════════
-           PAGE: REPORT (placeholder)
+           PAGE: REPORT
       ════════════════════ -->
       <section class="page-section" id="page-report">
+
+        <!-- Header -->
         <div class="page-header">
           <div class="page-header__left">
-            <h2 class="page-section-title">Report</h2>
-            <p class="page-section-sub">Final generated report for this project version</p>
+            <h2 class="page-section-title">Reports</h2>
+            <p class="page-section-sub">Generated reports for this project version</p>
           </div>
-          <div class="page-header__right">
+          <div class="page-header__right" style="display:flex;align-items:center;gap:10px;">
             <span class="version-badge">v1</span>
+            <button class="rp-btn-generate" onclick="generateReport()">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>
+                <line x1="12" y1="18" x2="12" y2="12"/><line x1="9" y1="15" x2="15" y2="15"/>
+              </svg>
+              Generate Report
+            </button>
           </div>
         </div>
-        <div class="placeholder-panel">
-          <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>
-          </svg>
-          <p>The final report will be generated here once all stages are complete.</p>
+
+        <!-- Report list panel -->
+        <div class="rp-list-panel">
+
+          <!-- Panel header -->
+          <div class="rp-panel-header">
+            <span class="rp-col rp-col--icon"></span>
+            <span class="rp-col rp-col--name">Report Name</span>
+            <span class="rp-col rp-col--date">Generated</span>
+            <span class="rp-col rp-col--status">Status</span>
+            <span class="rp-col rp-col--size">Size</span>
+            <span class="rp-col rp-col--actions"></span>
+          </div>
+
+          <!-- Dynamic report rows -->
+          <div class="rp-list-body" id="rpListBody">
+
+            <!-- Empty state -->
+            <div class="rp-empty-state" id="rpEmptyState">
+              <svg width="42" height="42" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>
+                <line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/>
+              </svg>
+              <p>No reports yet.</p>
+              <span>Click <strong>Generate Report</strong> to create one from the current process plan.</span>
+            </div>
+
+          </div>
+
         </div>
+
       </section>
 
     </main>
   </div>
 
   <script src="project.js"></script>
+  <script src="extraction.js"></script>
+  <script src="planning.js"></script>
+  <script src="report.js"></script>
 </body>
 </html>
