@@ -721,6 +721,9 @@
   color: var(--text-tertiary);
 }
 
+.preview-processing { font-size: 11px; color: var(--silver-40); }
+.preview-error { max-width: 420px; font-size: 11px; line-height: 1.4; color: #f07878; }
+
 .preview-actions {
   display: flex;
   flex-direction: column;

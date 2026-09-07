@@ -7,6 +7,7 @@ import { JobStatus, JobType } from '../shared/enums';
 export interface CreateJobInput {
   projectId: Types.ObjectId;
   type: JobType;
+  metadata?: Record<string, any>;
 }
 
 @Injectable()
@@ -21,6 +22,7 @@ export class JobsService {
       type: input.type,
       status: JobStatus.PENDING,
       progress: 0,
+      metadata: input.metadata ?? {},
     });
     return job.save();
   }

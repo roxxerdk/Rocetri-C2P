@@ -244,8 +244,8 @@
 
 .ext-table-head {
   display: grid;
-  grid-template-columns: 2fr 1.5fr 0.6fr 1fr;
-  gap: 0;
+  grid-template-columns: minmax(160px, 2.2fr) minmax(150px, 2fr) minmax(60px, 0.8fr);
+  gap: 12px;
   padding: 7px 16px;
   background: rgba(192,192,192,0.03);
   border-bottom: 1px solid var(--border-faint);
@@ -253,11 +253,13 @@
 }
 
 .ext-table-head span {
+  display: block;
   font-size: 10px;
   font-weight: 600;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--text-tertiary);
+  min-width: 0;
 }
 
 .ext-table-body {
@@ -269,13 +271,18 @@
 
 .ext-row {
   display: grid;
-  grid-template-columns: 2fr 1.5fr 0.6fr 1fr;
-  gap: 0;
+  grid-template-columns: minmax(160px, 2.2fr) minmax(150px, 2fr) minmax(60px, 0.8fr);
+  gap: 12px;
   padding: 9px 16px;
   border-bottom: 1px solid var(--border-faint);
   cursor: pointer;
   transition: background var(--t-fast);
   align-items: center;
+}
+
+.ext-row > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .ext-row:hover { background: rgba(192,192,192,0.04); }
@@ -295,6 +302,7 @@
   outline: none;
   border-radius: 3px;
   padding: 1px 3px;
+  min-width: 0;
 }
 
 .ext-value[contenteditable="true"] {
@@ -306,6 +314,7 @@
 .ext-unit {
   font-size: 11px;
   color: var(--text-tertiary);
+  justify-self: start;
 }
 
 /* Confidence badges */
@@ -357,6 +366,18 @@
   gap: var(--sp-sm);
   color: var(--text-tertiary);
   padding: var(--sp-sm);
+  background: rgba(192, 192, 192, 0.02);
+  overflow: hidden;
+}
+
+.ext-caed-preview-image {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  object-position: center;
+  border-radius: var(--r-sm);
+  display: block;
+  background: rgba(12, 12, 12, 0.4);
 }
 
 .ext-caed-no-img {

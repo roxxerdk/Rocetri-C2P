@@ -1,24 +1,4 @@
-import { useState, useRef } from 'react';
-
-/* Static feature rows — mirror the hard-coded rows in project.html */
-const INITIAL_FEATURES = [
-  { id: 1, param: 'Span Length',    value: '24.50', unit: 'm',  conf: 'high', pct: '97%' },
-  { id: 2, param: 'Beam Depth',     value: '1.20',  unit: 'm',  conf: 'high', pct: '94%' },
-  { id: 3, param: 'Flange Width',   value: '0.45',  unit: 'm',  conf: 'med',  pct: '81%' },
-  { id: 4, param: 'Web Thickness',  value: '0.018', unit: 'm',  conf: 'high', pct: '92%' },
-  { id: 5, param: 'Support Spacing',value: '6.00',  unit: 'm',  conf: 'high', pct: '98%' },
-  { id: 6, param: 'Load Class',     value: 'HA + HB', unit: '—', conf: 'low', pct: '62%' },
-  { id: 7, param: 'Deck Thickness', value: '0.230', unit: 'm',  conf: 'high', pct: '89%' },
-  { id: 8, param: 'Steel Grade',    value: 'S355',  unit: '—',  conf: 'med',  pct: '76%' },
-];
-
-const BOT_REPLIES = [
-  "I've highlighted the low-confidence rows in amber. Please review Load Class and Steel Grade.",
-  'You can click any row to inspect it. In Edit mode, values become directly editable.',
-  "Once you're satisfied, tick Verified and hit Confirm & Proceed to move to Process Planning.",
-  'Need a specific parameter explained? Just ask me.',
-  'The extraction is based on the uploaded CAED diagram. If you replace the diagram, re-extraction will be triggered.',
-];
+import { useState, useRef, useEffect } from 'react';
 
 /*
  * ExtractionSection — mirrors #page-extraction from project.html + extraction.js
@@ -28,19 +8,105 @@ const BOT_REPLIES = [
  *  onConfirm      — fn() called when Confirm & Proceed succeeds (switches to Planning)
  *  isActive       — boolean (controls display: flex vs none via CSS class)
  */
-export default function ExtractionSection({ activeVersion, onConfirm, isActive }) {
-  const [features, setFeatures] = useState(INITIAL_FEATURES);
+export default function ExtractionSection({ activeVersion, projectId, uploadedFile, context, onConfirm, isActive }) {
+  const [contextData, setContextData] = useState(() => context?.contextData || context || null);
+  const [features, setFeatures] = useState(() => context ? contextToFeatures(context) : []);
+  const [isLoading, setIsLoading] = useState(!context);
+  const [loadError, setLoadError] = useState('');
   const [selectedRow, setSelectedRow] = useState(null);
   const [editingMode, setEditingMode] = useState(false);
   const [verified, setVerified] = useState(false);
   const [editing, setEditing] = useState(false);
-  const [botMessages, setBotMessages] = useState([
-    { role: 'ai', text: 'CAED diagram processed. I\'ve extracted <strong>12 parameters</strong> from the uploaded drawing. Review them on the right and validate.' },
-    { role: 'ai', text: 'Click any row in the Features table to inspect or correct a value.' },
-  ]);
+  const [botMessages, setBotMessages] = useState([]);
+  const [botLoading, setBotLoading] = useState(false);
   const [botInput, setBotInput] = useState('');
-  const botReplyIdxRef = useRef(0);
   const messagesEndRef = useRef(null);
+
+  function contextToFeatures(data) {
+    const contextData = data.contextData || data;
+    const dimensions = contextData.geometry?.overallDimensions || [];
+    const featureRows = (contextData.geometry?.features || []).flatMap((feature, featureIndex) =>
+      (feature.dimensions || []).map((dimension, dimensionIndex) => ({
+        id: `feature-${featureIndex}-${dimensionIndex}`,
+        source: { type: 'feature', featureIndex, dimensionIndex },
+        param: dimension.name || feature.name || feature.type || 'Feature',
+        value: dimension.rawValue ?? dimension.value ?? '',
+        unit: dimension.unit || '—',
+        conf: dimension.critical ? 'high' : 'med',
+        pct: '—',
+      })),
+    );
+    return [...dimensions.map((dimension, index) => ({
+      id: `dimension-${index}`,
+      source: { type: 'dimension', index },
+      param: dimension.name,
+      value: dimension.rawValue ?? dimension.value ?? '',
+      unit: dimension.unit || '—',
+      conf: dimension.critical ? 'high' : 'med',
+      pct: '—',
+    })), ...featureRows];
+  }
+
+  function hasExtractedRows(data) {
+    return contextToFeatures(data).length > 0;
+  }
+
+  useEffect(() => {
+    if (context) {
+      setContextData(context.contextData || context);
+      setFeatures(contextToFeatures(context));
+    }
+  }, [context]);
+
+  useEffect(() => {
+    if (!isActive || !projectId) return;
+
+    setIsLoading(true);
+    setLoadError('');
+    async function loadContext() {
+      const response = await fetch(`http://localhost:3000/api/projects/${projectId}/engineering/context`);
+      const payload = await response.json();
+      if (!response.ok || payload.success === false) {
+        throw new Error(payload.message || 'Unable to load extracted context');
+      }
+
+      if (payload.data && hasExtractedRows(payload.data)) {
+        setContextData(payload.data.contextData || payload.data);
+        setFeatures(contextToFeatures(payload.data));
+        return;
+      }
+
+      // A failed/empty extraction can be the newest document; retain the latest usable result.
+      const historyResponse = await fetch(`http://localhost:3000/api/projects/${projectId}/engineering/contexts`);
+      const historyPayload = await historyResponse.json();
+      if (!historyResponse.ok || historyPayload.success === false) {
+        throw new Error(historyPayload.message || 'Unable to load extraction history');
+      }
+
+      const usableContext = (historyPayload.data || []).find(hasExtractedRows);
+      if (usableContext) setFeatures(contextToFeatures(usableContext));
+      if (usableContext) setContextData(usableContext.contextData || usableContext);
+    }
+
+    loadContext()
+      .catch((error) => setLoadError(error.message))
+      .finally(() => setIsLoading(false));
+  }, [isActive, projectId]);
+
+  useEffect(() => {
+    if (!isActive || !projectId) return;
+    fetch(`http://localhost:3000/api/projects/${projectId}/conversations`)
+      .then(response => response.json())
+      .then(payload => {
+        if (payload.success === false) throw new Error(payload.message || 'Unable to load conversation');
+        const conversation = (payload.data || []).find(item => item.type === 'EXTRACTION');
+        setBotMessages((conversation?.messages || []).map(message => ({
+          role: message.role === 'assistant' ? 'ai' : 'user',
+          text: message.content,
+        })));
+      })
+      .catch(() => setBotMessages([]));
+  }, [isActive, projectId]);
 
   /* Derived validation status — mirrors updateValidationState() */
   let validationStatus = '— Not validated';
@@ -77,16 +143,47 @@ export default function ExtractionSection({ activeVersion, onConfirm, isActive }
     setFeatures(prev => prev.map(f => f.id === id ? { ...f, value: newValue } : f));
   }
 
-  function handleConfirmValidation() {
+  async function handleConfirmValidation() {
     if (!verified) {
       // Briefly pulse the verified checkbox label — cannot do outline trick in React cleanly,
       // so we use a brief state flash instead (same visual intent)
       return;
     }
+    if (contextData) {
+      const geometry = {
+        overallDimensions: [...(contextData.geometry?.overallDimensions || [])],
+        features: (contextData.geometry?.features || []).map(feature => ({
+          ...feature,
+          dimensions: [...(feature.dimensions || [])],
+        })),
+      };
+      let changed = false;
+      features.forEach(row => {
+        const value = String(row.value ?? '');
+        const dimension = row.source.type === 'dimension'
+          ? geometry.overallDimensions[row.source.index]
+          : geometry.features[row.source.featureIndex]?.dimensions?.[row.source.dimensionIndex];
+        if (dimension && String(dimension.rawValue ?? dimension.value ?? '') !== value) {
+          dimension.rawValue = value;
+          dimension.value = Number.isFinite(Number(value)) ? Number(value) : null;
+          changed = true;
+        }
+      });
+      if (changed) {
+        const response = await fetch(`http://localhost:3000/api/projects/${projectId}/engineering/correct`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ corrections: { geometry } }),
+        });
+        const payload = await response.json();
+        if (!response.ok || payload.success === false) throw new Error(payload.message || 'Changes could not be saved');
+        setContextData(payload.data.contextData || payload.data);
+      }
+    }
     onConfirm();
   }
 
-  function sendBotMessage(e) {
+  async function sendBotMessage(e) {
     if (e.key !== 'Enter') return;
     const text = botInput.trim();
     if (!text) return;
@@ -95,16 +192,29 @@ export default function ExtractionSection({ activeVersion, onConfirm, isActive }
       { role: 'user', text },
     ]);
     setBotInput('');
-    setTimeout(() => {
+    setBotLoading(true);
+    try {
+      const response = await fetch(`http://localhost:3000/api/projects/${projectId}/conversations`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type: 'EXTRACTION', message: text }),
+      });
+      const payload = await response.json();
+      if (!response.ok || payload.success === false) throw new Error(payload.message || 'Message could not be sent');
+      const messages = payload.data?.messages || [];
+      const reply = messages[messages.length - 1];
       setBotMessages(prev => [
         ...prev,
-        { role: 'ai', text: BOT_REPLIES[botReplyIdxRef.current % BOT_REPLIES.length] },
+        { role: 'ai', text: reply?.content || 'No response was returned.' },
       ]);
-      botReplyIdxRef.current++;
       if (messagesEndRef.current) {
         messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
       }
-    }, 600);
+    } catch (error) {
+      setBotMessages(prev => [...prev, { role: 'ai', text: `Unable to send message: ${error.message}` }]);
+    } finally {
+      setBotLoading(false);
+    }
   }
 
   function handleSendClick() {
@@ -145,9 +255,10 @@ export default function ExtractionSection({ activeVersion, onConfirm, isActive }
           <div className="ext-bot-messages" id="botMessages">
             {botMessages.map((msg, i) => (
               <div key={i} className={`bot-msg bot-msg--${msg.role === 'ai' ? 'ai' : 'user'}`}>
-                <p dangerouslySetInnerHTML={{ __html: msg.text }} />
+                <p>{msg.text}</p>
               </div>
             ))}
+            {botLoading && <div className="bot-msg bot-msg--ai"><p>Reviewing the persisted extraction…</p></div>}
             <div ref={messagesEndRef} />
           </div>
 
@@ -179,7 +290,7 @@ export default function ExtractionSection({ activeVersion, onConfirm, isActive }
             <div className="ext-features-header">
               <span className="ext-features-title">Features Extracted</span>
               <div className="ext-features-actions">
-                <span className="ext-feature-count">12 parameters</span>
+                <span className="ext-feature-count">{isLoading ? 'Loading…' : `${features.length} parameters`}</span>
                 <button className="ext-sort-btn" title="Sort">
                   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                     <line x1="12" y1="5" x2="12" y2="19"/>
@@ -194,11 +305,28 @@ export default function ExtractionSection({ activeVersion, onConfirm, isActive }
                 <span>Parameter</span>
                 <span>Extracted Value</span>
                 <span>Unit</span>
-                <span>Confidence</span>
               </div>
 
               <div className="ext-table-body" id="featuresTableBody">
-                {features.map((f) => (
+                {isLoading && (
+                  <div className="ui-loading">
+                    <span className="ui-spinner"></span>
+                    <span>Loading extracted parameters</span>
+                  </div>
+                )}
+                {!isLoading && loadError && (
+                  <div className="ui-empty">
+                    <strong>Extraction data unavailable</strong>
+                    <span>{loadError}</span>
+                  </div>
+                )}
+                {!isLoading && !loadError && features.length === 0 && (
+                  <div className="ui-empty">
+                    <strong>No extracted parameters yet</strong>
+                    <span>Upload a CAED drawing and return here to review the result.</span>
+                  </div>
+                )}
+                {!isLoading && !loadError && features.map((f) => (
                   <div
                     key={f.id}
                     className={`ext-row${selectedRow === f.id ? ' selected' : ''}`}
@@ -214,7 +342,6 @@ export default function ExtractionSection({ activeVersion, onConfirm, isActive }
                       {f.value}
                     </span>
                     <span className="ext-unit">{f.unit}</span>
-                    <span className={`ext-conf ext-conf--${f.conf}`}>{f.pct}</span>
                   </div>
                 ))}
               </div>
@@ -228,11 +355,21 @@ export default function ExtractionSection({ activeVersion, onConfirm, isActive }
               <span className="ext-caed-hint">Reference view</span>
             </div>
             <div className="ext-caed-img-area" id="caedPreviewArea">
-              <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round">
-                <rect x="3" y="3" width="18" height="18" rx="2"/>
-                <path d="M3 9h18M9 21V9"/>
-              </svg>
-              <p className="ext-caed-no-img">No diagram uploaded yet — go to CAED tab to upload.</p>
+              {uploadedFile?.thumbSrc ? (
+                <img
+                  src={uploadedFile.thumbSrc}
+                  alt="Uploaded CAED drawing"
+                  className="ext-caed-preview-image"
+                />
+              ) : (
+                <>
+                  <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round">
+                    <rect x="3" y="3" width="18" height="18" rx="2"/>
+                    <path d="M3 9h18M9 21V9"/>
+                  </svg>
+                  <p className="ext-caed-no-img">No diagram uploaded yet — go to CAED tab to upload.</p>
+                </>
+              )}
             </div>
           </div>
 

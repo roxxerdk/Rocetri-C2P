@@ -1,12 +1,4 @@
-import { useState, useRef } from 'react';
-
-const PP_BOT_REPLIES = [
-  'Tip: use Tab to jump between cells, Tab on the last cell adds a new row automatically.',
-  'You can drag the ⠿ handle on the left to reorder steps.',
-  'Typical sequence: Rough → Semi-Finish → Finish → Inspect → Deburr.',
-  'When all steps are filled, hit Create Report to generate the final document.',
-  'I can suggest tooling and parameters if you describe the material and feature.',
-];
+import { useState, useRef, useEffect } from 'react';
 
 /* Drag-handle SVG */
 function DragHandle() {
@@ -29,16 +21,36 @@ function DragHandle() {
  *  onCreateReport — fn() navigate to Report
  *  isActive — boolean
  */
-export default function PlanningSection({ activeVersion, onCreateReport, isActive }) {
+export default function PlanningSection({ activeVersion, projectId, onCreateReport, isActive }) {
   const [steps, setSteps] = useState([]);
   const [ppBotOpen, setPpBotOpen] = useState(false);
-  const [ppBotMessages, setPpBotMessages] = useState([
-    { role: 'ai', text: 'Ready to assist with process planning. Add operations above and I\'ll help sequence and optimise them.' },
-  ]);
+  const [ppBotMessages, setPpBotMessages] = useState([]);
   const [ppBotInput, setPpBotInput] = useState('');
-  const ppBotReplyIdxRef = useRef(0);
+  const [ppBotLoading, setPpBotLoading] = useState(false);
   const ppMsgsEndRef = useRef(null);
   const dragSrcIdRef = useRef(null);
+
+  useEffect(() => {
+    if (!isActive || !projectId) return;
+
+    fetch(`http://localhost:3000/api/projects/${projectId}/conversations`)
+      .then(response => response.json())
+      .then(payload => {
+        if (payload.success === false) throw new Error(payload.message || 'Unable to load planning conversation');
+        const conversation = (payload.data || []).find(item => item.type === 'PLANNING');
+        setPpBotMessages((conversation?.messages || []).map(message => ({
+          role: message.role === 'assistant' ? 'ai' : 'user',
+          text: message.content,
+        })));
+      })
+      .catch(() => setPpBotMessages([]));
+  }, [isActive, projectId]);
+
+  useEffect(() => {
+    if (ppMsgsEndRef.current) {
+      ppMsgsEndRef.current.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [ppBotMessages, ppBotLoading]);
 
   const stepCount = steps.length;
   const stepCountLabel = stepCount === 0 ? '0 steps' : `${stepCount} step${stepCount > 1 ? 's' : ''}`;
@@ -103,20 +115,34 @@ export default function PlanningSection({ activeVersion, onCreateReport, isActiv
   }
 
   /* ── PP Bot ── */
-  function sendPpBotMessage(e) {
-    if (e.key !== 'Enter') return;
+  async function sendPpBotMessage(e) {
+    if (e && e.key && e.key !== 'Enter') return;
     const text = ppBotInput.trim();
-    if (!text) return;
+    if (!text || !projectId) return;
+
     setPpBotMessages(prev => [...prev, { role: 'user', text }]);
     setPpBotInput('');
-    setTimeout(() => {
-      setPpBotMessages(prev => [
-        ...prev,
-        { role: 'ai', text: PP_BOT_REPLIES[ppBotReplyIdxRef.current % PP_BOT_REPLIES.length] },
-      ]);
-      ppBotReplyIdxRef.current++;
-      if (ppMsgsEndRef.current) ppMsgsEndRef.current.scrollIntoView({ behavior: 'smooth' });
-    }, 500);
+    setPpBotLoading(true);
+
+    try {
+      const response = await fetch(`http://localhost:3000/api/projects/${projectId}/conversations`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type: 'PLANNING', message: text }),
+      });
+      const payload = await response.json();
+      if (!response.ok || payload.success === false) {
+        throw new Error(payload.message || 'Message could not be sent');
+      }
+
+      const messages = payload.data?.messages || [];
+      const reply = messages[messages.length - 1];
+      setPpBotMessages(prev => [...prev, { role: 'ai', text: reply?.content || 'No response was returned.' }]);
+    } catch (error) {
+      setPpBotMessages(prev => [...prev, { role: 'ai', text: `Unable to send message: ${error.message}` }]);
+    } finally {
+      setPpBotLoading(false);
+    }
   }
 
   return (
@@ -349,6 +375,7 @@ export default function PlanningSection({ activeVersion, onCreateReport, isActiv
                     <p>{msg.text}</p>
                   </div>
                 ))}
+                {ppBotLoading && <div className="bot-msg bot-msg--ai"><p>Checking the current plan and persisted context…</p></div>}
                 <div ref={ppMsgsEndRef} />
               </div>
               <div className="ext-bot-input-wrap" style={{ borderTop: '1px solid var(--border-faint)' }}>

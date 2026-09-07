@@ -52,6 +52,23 @@ export default function Project() {
 
   /* ── Floating datetime ── */
   const [lastUpdate, setLastUpdate] = useState(null);
+  const [extractedContext, setExtractedContext] = useState(null);
+  const [uploadedFile, setUploadedFile] = useState(null);
+
+  useEffect(() => {
+    const savedFile = window.localStorage.getItem(`c2p-upload-${jobId}`);
+    if (!savedFile) return;
+    try {
+      setUploadedFile(JSON.parse(savedFile));
+    } catch {
+      window.localStorage.removeItem(`c2p-upload-${jobId}`);
+    }
+  }, [jobId]);
+
+  function handleFileSelected(file) {
+    setUploadedFile(file);
+    window.localStorage.setItem(`c2p-upload-${jobId}`, JSON.stringify(file));
+  }
 
   /* ── Report auto-generate flag (set when Planning calls createReport) ── */
   const [autoGenerateReport, setAutoGenerateReport] = useState(false);
@@ -123,7 +140,14 @@ export default function Project() {
           {activePage === 'caed' && (
             <CaedSection
               activeVersion={activeVersion}
+              projectId={jobId}
+              uploadedFile={uploadedFile}
+              onFileSelected={handleFileSelected}
               onFileUploaded={(date) => setLastUpdate(date)}
+              onExtractionComplete={(result) => {
+                setExtractedContext(result.context);
+                setActivePage('extraction');
+              }}
             />
           )}
 
@@ -131,6 +155,9 @@ export default function Project() {
           {activePage === 'extraction' && (
             <ExtractionSection
               activeVersion={activeVersion}
+              projectId={jobId}
+              uploadedFile={uploadedFile}
+              context={extractedContext}
               onConfirm={() => setActivePage('planning')}
               isActive={true}
             />
@@ -140,6 +167,7 @@ export default function Project() {
           {activePage === 'planning' && (
             <PlanningSection
               activeVersion={activeVersion}
+              projectId={jobId}
               onCreateReport={handleCreateReport}
               isActive={true}
             />

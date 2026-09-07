@@ -19,9 +19,10 @@ function formatFileSize(bytes) {
  *  activeVersion — string for the version badge
  *  onFileUploaded — fn(Date) called when a file is processed (to sync datetime)
  */
-export default function CaedSection({ activeVersion, onFileUploaded }) {
+export default function CaedSection({ activeVersion, projectId, uploadedFile, onFileSelected, onFileUploaded, onExtractionComplete }) {
   const [dragOver, setDragOver] = useState(false);
-  const [uploadedFile, setUploadedFile] = useState(null); // null | { name, size, uploadedAt, thumbSrc }
+  const [isExtracting, setIsExtracting] = useState(false);
+  const [extractionError, setExtractionError] = useState('');
   const fileInputRef = useRef(null);
 
   /* Upload type texts */
@@ -34,7 +35,6 @@ export default function CaedSection({ activeVersion, onFileUploaded }) {
   }
 
   function processFile(file) {
-    const isZip = file.name.toLowerCase().endsWith('.zip');
     const isImage = /\.(png|jpg|jpeg|tiff|bmp|webp)$/i.test(file.name);
     const isPdf = file.name.toLowerCase().endsWith('.pdf');
 
@@ -44,6 +44,8 @@ export default function CaedSection({ activeVersion, onFileUploaded }) {
     }
 
     const now = new Date();
+    setIsExtracting(true);
+    setExtractionError('');
     const uploadedAt =
       'Uploaded ' +
       now.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) +
@@ -53,14 +55,30 @@ export default function CaedSection({ activeVersion, onFileUploaded }) {
     if (isImage) {
       const reader = new FileReader();
       reader.onload = (e) => {
-        setUploadedFile({ name: file.name, size: formatFileSize(file.size), uploadedAt, thumbSrc: e.target.result });
+        onFileSelected({ name: file.name, size: formatFileSize(file.size), uploadedAt, thumbSrc: e.target.result });
       };
       reader.readAsDataURL(file);
     } else {
-      setUploadedFile({ name: file.name, size: formatFileSize(file.size), uploadedAt, thumbSrc: null });
+      onFileSelected({ name: file.name, size: formatFileSize(file.size), uploadedAt, thumbSrc: null });
     }
 
     onFileUploaded(now);
+
+    const formData = new FormData();
+    formData.append('files', file);
+    fetch(`http://localhost:3000/api/projects/${projectId}/engineering/extract-files`, {
+      method: 'POST',
+      body: formData,
+    })
+      .then(async (response) => {
+        const payload = await response.json();
+        if (!response.ok || payload.success === false) {
+          throw new Error(payload.message || 'Gemini extraction failed');
+        }
+        onExtractionComplete(payload.data);
+      })
+      .catch((error) => setExtractionError(error.message))
+      .finally(() => setIsExtracting(false));
   }
 
   function handleFileSelect(e) {
@@ -151,6 +169,8 @@ export default function CaedSection({ activeVersion, onFileUploaded }) {
               <p className="preview-filename" id="previewFilename">{uploadedFile.name}</p>
               <p className="preview-filesize" id="previewFilesize">{uploadedFile.size}</p>
               <p className="preview-uploaded-at" id="previewUploadedAt">{uploadedFile.uploadedAt}</p>
+              {isExtracting && <p className="preview-processing">Analyzing drawing with Gemini…</p>}
+              {extractionError && <p className="preview-error">{extractionError}</p>}
             </div>
             <div className="preview-actions">
               <button

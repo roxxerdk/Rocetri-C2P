@@ -43,3 +43,26 @@ export enum JobStatus {
   COMPLETED = 'COMPLETED',
   FAILED = 'FAILED',
 }
+
+// ─── Feature Types ───
+export enum FeatureType {
+  HOLE = 'HOLE',
+  BORE = 'BORE',
+  COUNTERBORE = 'COUNTERBORE',
+  COUNTERSINK = 'COUNTERSINK',
+  SLOT = 'SLOT',
+  POCKET = 'POCKET',
+  THREAD = 'THREAD',
+  SHAFT = 'SHAFT',
+  CYLINDER = 'CYLINDER',
+  STEP = 'STEP',
+  SHOULDER = 'SHOULDER',
+  KEYWAY = 'KEYWAY',
+  CHAMFER = 'CHAMFER',
+  FILLET = 'FILLET',
+  ARC = 'ARC',
+  CUTOUT = 'CUTOUT',
+  GEAR = 'GEAR',
+  OTHER = 'OTHER',
+}
+
