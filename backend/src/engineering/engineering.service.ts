@@ -6,7 +6,8 @@ import { Conversation, ConversationDocument } from './schemas/conversation.schem
 import { StartExtractionDto } from './dto/start-extraction.dto';
 import { SubmitCorrectionDto } from './dto/submit-correction.dto';
 import { StartVerificationDto } from './dto/start-verification.dto';
-import { ContextType, DerivedStatus, JobType, WorkflowStage } from '../shared/enums';
+import { SendMessageDto } from './dto/send-message.dto';
+import { ContextType, ConversationType, DerivedStatus, JobType, WorkflowStage } from '../shared/enums';
 import { ProjectsService } from '../projects/projects.service';
 import { JobsService } from '../jobs/jobs.service';
 import { WorkflowService } from '../workflow/workflow.service';
@@ -20,6 +21,10 @@ export class EngineeringService {
     private readonly jobsService: JobsService,
     private readonly workflowService: WorkflowService,
   ) {}
+
+  async validateProjectExists(projectId: string) {
+    await this.projectsService.findById(projectId);
+  }
 
   async startExtraction(projectId: string, dto: StartExtractionDto) {
     const project = await this.projectsService.findById(projectId);
@@ -115,6 +120,33 @@ export class EngineeringService {
       .exec();
     if (!conv) throw new NotFoundException('Conversation not found');
     return conv;
+  }
+
+  async sendMessage(projectId: string, dto: SendMessageDto) {
+    await this.projectsService.findById(projectId);
+
+    let conversation = await this.conversationModel
+      .findOne({ projectId: new Types.ObjectId(projectId), type: dto.type })
+      .sort({ createdAt: -1 })
+      .exec();
+
+    if (!conversation) {
+      conversation = new this.conversationModel({
+        projectId: new Types.ObjectId(projectId),
+        type: dto.type,
+        messages: [],
+      });
+    }
+
+    conversation.messages.push({ role: 'user', content: dto.message, timestamp: new Date() });
+    conversation.messages.push({
+      role: 'assistant',
+      content: `${dto.type} chatbot is not yet implemented. Your message was: ${dto.message}`,
+      timestamp: new Date(),
+    });
+
+    await conversation.save();
+    return conversation;
   }
 
   private async getNextContextVersion(

@@ -51,7 +51,7 @@ export default function Project() {
   const [activePage, setActivePage] = useState('caed');
 
   /* ── Floating datetime ── */
-  const [lastUpdate, setLastUpdate] = useState(new Date());
+  const [lastUpdate, setLastUpdate] = useState(null);
 
   /* ── Report auto-generate flag (set when Planning calls createReport) ── */
   const [autoGenerateReport, setAutoGenerateReport] = useState(false);
@@ -101,9 +101,9 @@ export default function Project() {
         {/* ═══ SIDEBAR ═══ */}
         <Sidebar
           expanded={sidebarExpanded}
-          onToggle={() => setSidebarExpanded(e => !e)}
+          onToggle={() => { setSidebarExpanded(e => !e); setLastUpdate(new Date()); }}
           activePage={activePage}
-          onSwitchPage={(page) => setActivePage(page)}
+          onSwitchPage={(page) => { setActivePage(page); setLastUpdate(new Date()); }}
           jobLabel={jobLabel}
           versions={versions}
           activeVersion={activeVersion}

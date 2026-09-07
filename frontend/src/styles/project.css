@@ -377,68 +377,106 @@
 .project-main {
   flex: 1;
   width: 100%;
-  margin-left: var(--sidebar-collapsed); /* always offset by icon rail */
-  padding: var(--sp-xl);
+  margin-left: var(--sidebar-collapsed);
+  padding: 88px var(--sp-xl) var(--sp-xl);
   position: relative;
   display: flex;
   flex-direction: column;
   gap: var(--sp-lg);
   min-width: 0;
   box-sizing: border-box;
+  transition: margin-left 240ms var(--ease);
+}
+
+.project-shell:has(.sidebar.expanded) .project-main {
+  margin-left: var(--sidebar-expanded);
 }
 
 /* ─── Floating Date-Time ─── */
 .datetime-float {
   position: fixed;
-  top: 56px;              /* flush below navbar */
-  right: 0;
+  top: 72px;
+  right: var(--sp-xl);
   z-index: 400;
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 8px 18px 8px 14px;
-  background: rgba(14, 14, 14, 0.92);
+  min-width: 172px;
+  padding: 9px 13px;
+  background: rgba(18, 18, 18, 0.96);
   border: 1px solid var(--border-default);
-  border-top: none;        /* merges with navbar bottom edge */
-  border-right: none;      /* flush against the screen edge */
-  border-radius: 0 0 0 var(--r-sm); /* only bottom-left corner rounded */
+  border-radius: var(--r-sm);
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
-  box-shadow: -2px 4px 16px rgba(0,0,0,0.45),
+  box-shadow: 0 8px 24px rgba(0,0,0,0.34),
               inset 0 1px 0 rgba(192,192,192,0.05);
-  color: var(--text-tertiary);
+  color: var(--text-secondary);
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(-6px);
+  pointer-events: none;
+  transition: opacity var(--t-normal), transform var(--t-normal), visibility var(--t-normal);
 }
 
-.datetime-float svg { flex-shrink: 0; }
+.datetime-float.visible {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0);
+}
+
+.datetime-float:hover {
+  border-color: var(--border-bright);
+  background: rgba(24, 24, 24, 0.98);
+}
+
+.datetime-float svg { flex-shrink: 0; color: var(--silver-40); }
 
 .datetime-float__content {
   display: flex;
   flex-direction: column;
-  gap: 1px;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
 }
 
 .datetime-float__date {
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 600;
-  color: var(--silver-40);
+  color: var(--text-secondary);
   font-variant-numeric: tabular-nums;
   line-height: 1.2;
 }
 
 .datetime-float__time {
-  font-size: 10px;
-  color: var(--text-tertiary);
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-primary);
   font-variant-numeric: tabular-nums;
   line-height: 1.2;
 }
 
 .datetime-float__update-label {
-  font-size: 9.5px;
+  font-size: 9px;
   color: var(--text-tertiary);
   letter-spacing: 0.04em;
-  padding-left: 4px;
+  padding-left: 9px;
   border-left: 1px solid var(--border-subtle);
-  margin-left: 2px;
+  margin-left: 0;
+  white-space: nowrap;
+}
+
+@media (max-width: 900px) {
+  .sidebar.expanded { width: min(var(--sidebar-expanded), 78vw); }
+  .project-shell:has(.sidebar.expanded) .project-main { margin-left: min(var(--sidebar-expanded), 78vw); }
+  .project-main { padding-left: var(--sp-md); padding-right: var(--sp-md); }
+}
+
+@media (max-width: 768px) {
+  .datetime-float { right: var(--sp-md); min-width: 0; max-width: calc(100vw - 32px); }
+}
+
+@media (max-width: 480px) {
+  .datetime-float__update-label { display: none; }
 }
 
 /* ─── Page sections ─── */

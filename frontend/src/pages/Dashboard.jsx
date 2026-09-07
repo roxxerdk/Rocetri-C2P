@@ -1,46 +1,42 @@
+import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import Navbar from '../components/Navbar.jsx';
 import JobCard from '../components/JobCard.jsx';
 
-/* Static job data — mirrors the 5 cards in index.html exactly */
-const JOBS = [
-  {
-    id: 'JOB-001',
-    name: 'Bridge Structure Analysis',
-    meta: 'C2P Extraction · CAED File',
-    versions: ['v1', 'v2', 'v3'],
-    date: '12 Aug 2026',
-  },
-  {
-    id: 'JOB-002',
-    name: 'Tunnel Load Validation',
-    meta: 'C2P Extraction · CAED File',
-    versions: ['v1', 'v2'],
-    date: '05 Sep 2026',
-  },
-  {
-    id: 'JOB-003',
-    name: 'Retaining Wall Report',
-    meta: 'C2P Extraction · CAED File',
-    versions: ['v1'],
-    date: '04 Sep 2026',
-  },
-  {
-    id: 'JOB-004',
-    name: 'Foundation Design Check',
-    meta: 'C2P Extraction · CAED File',
-    versions: ['v1', 'v2', 'v3'],
-    date: '01 Sep 2026',
-  },
-  {
-    id: 'JOB-005',
-    name: 'Slope Stability Review',
-    meta: 'C2P Extraction · CAED File',
-    versions: [],
-    date: '06 Sep 2026',
-  },
-];
+const API = 'http://localhost:3000/api';
 
 export default function Dashboard() {
+  const navigate = useNavigate();
+  const [jobs, setJobs] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    fetch(`${API}/projects`)
+      .then((response) => response.json())
+      .then((payload) => setJobs(payload.success ? payload.data : []))
+      .finally(() => setLoading(false));
+  }, []);
+
+  async function createJob() {
+    const name = window.prompt('Project name:');
+    if (!name?.trim()) return;
+    const response = await fetch(`${API}/projects`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ projectName: name.trim() }),
+    });
+    const payload = await response.json();
+    if (payload.success && payload.data?._id) navigate(`/project?id=${payload.data._id}`);
+  }
+
+  const jobCards = jobs.map((project) => ({
+    id: project._id,
+    name: project.projectName,
+    meta: project.primaryWorkflowStage,
+    versions: [],
+    date: project.createdAt ? new Date(project.createdAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—',
+  }));
+
   return (
     <div className="app-shell">
       {/* ══════════════════════════════════════
@@ -70,7 +66,7 @@ export default function Dashboard() {
                 </svg>
                 Search
               </button>
-              <button className="btn btn--primary">
+              <button className="btn btn--primary" onClick={createJob}>
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
                 </svg>
@@ -84,12 +80,13 @@ export default function Dashboard() {
 
           {/* ─── JOB GRID ─── */}
           <section className="job-grid">
-            {JOBS.map((job) => (
+            {loading && <div className="ui-loading"><span className="ui-spinner"></span><span>Loading projects</span></div>}
+            {!loading && jobCards.map((job) => (
               <JobCard key={job.id} {...job} />
             ))}
 
             {/* ADD NEW CARD */}
-            <article className="job-card job-card--add">
+            <article className="job-card job-card--add" onClick={createJob}>
               <div className="add-card-inner">
                 <div className="add-icon">
                   <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
