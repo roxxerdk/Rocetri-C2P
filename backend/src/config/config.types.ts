@@ -12,6 +12,11 @@ export interface GeminiConfig {
   model: string;
 }
 
+export interface OpenAiConfig {
+  apiKey: string;
+  model: string;
+}
+
 export interface QwenConfig {
   apiKey: string;
   model: string;

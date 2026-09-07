@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { IAiProvider, AiRequest, AiResponse } from './interfaces/ai-provider.interface';
 import { GeminiProvider } from './providers/gemini.provider';
 import { QwenProvider } from './providers/qwen.provider';
+import { OpenAiProvider } from './providers/openai.provider';
 
 @Injectable()
 export class AiService {
@@ -11,9 +12,11 @@ export class AiService {
   constructor(
     private readonly geminiProvider: GeminiProvider,
     private readonly qwenProvider: QwenProvider,
+    private readonly openAiProvider: OpenAiProvider,
   ) {
     this.providers.set('gemini', geminiProvider);
     this.providers.set('qwen', qwenProvider);
+    this.providers.set('openai', openAiProvider);
   }
 
   /**
