@@ -20,26 +20,14 @@ function formatFileSize(bytes) {
  *  onFileUploaded — fn(Date) called when a file is processed (to sync datetime)
  */
 export default function CaedSection({ activeVersion, onFileUploaded }) {
-  const [uploadType, setUploadType] = useState('single');
   const [dragOver, setDragOver] = useState(false);
   const [uploadedFile, setUploadedFile] = useState(null); // null | { name, size, uploadedAt, thumbSrc }
   const fileInputRef = useRef(null);
 
   /* Upload type texts */
-  const uploadTitle = uploadType === 'single'
-    ? 'Drop your CAED diagram here'
-    : 'Drop your CAED ZIP archive here';
-  const uploadHint = uploadType === 'single'
-    ? 'or click to browse — PDF or Image accepted'
-    : 'or click to browse — ZIP file with multiple CAED views';
-  const fileAccept = uploadType === 'single'
-    ? '.pdf,.png,.jpg,.jpeg,.tiff,.bmp,.webp'
-    : '.zip';
-
-  function handleSetUploadType(type) {
-    setUploadType(type);
-    setUploadedFile(null); // reset zone
-  }
+  const uploadTitle = 'Drop your CAED diagram here';
+  const uploadHint = 'or click to browse — PDF or Image accepted';
+  const fileAccept = '.pdf,.png,.jpg,.jpeg,.tiff,.bmp,.webp';
 
   function triggerFileInput() {
     fileInputRef.current.click();
@@ -50,11 +38,7 @@ export default function CaedSection({ activeVersion, onFileUploaded }) {
     const isImage = /\.(png|jpg|jpeg|tiff|bmp|webp)$/i.test(file.name);
     const isPdf = file.name.toLowerCase().endsWith('.pdf');
 
-    if (uploadType === 'multi' && !isZip) {
-      alert('Please upload a ZIP file for multiple views.');
-      return;
-    }
-    if (uploadType === 'single' && !isImage && !isPdf) {
+    if (!isImage && !isPdf) {
       alert('Please upload a PDF or image file for a single page diagram.');
       return;
     }
@@ -109,40 +93,9 @@ export default function CaedSection({ activeVersion, onFileUploaded }) {
           <h2 className="page-section-title">CAED Diagram</h2>
           <p className="page-section-sub">Upload your CAED drawing for extraction</p>
         </div>
-        <div className="page-header__right">
-          <span className="version-badge" id="headerVersionBadge">{activeVersion}</span>
-        </div>
       </div>
 
       {/* Upload type toggle */}
-      <div className="upload-type-toggle">
-        <button
-          className={`upload-type-btn${uploadType === 'single' ? ' active' : ''}`}
-          id="btnSingle"
-          onClick={() => handleSetUploadType('single')}
-        >
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
-            <polyline points="14 2 14 8 20 8"/>
-          </svg>
-          Single page
-          <span className="upload-type-hint">PDF / Image</span>
-        </button>
-        <button
-          className={`upload-type-btn${uploadType === 'multi' ? ' active' : ''}`}
-          id="btnMulti"
-          onClick={() => handleSetUploadType('multi')}
-        >
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <polyline points="21 8 21 21 3 21 3 8"/>
-            <rect x="1" y="3" width="22" height="5"/>
-            <line x1="10" y1="12" x2="14" y2="12"/>
-          </svg>
-          Multiple views
-          <span className="upload-type-hint">ZIP file</span>
-        </button>
-      </div>
-
       {/* Drop Zone */}
       <div
         className={`upload-zone${dragOver ? ' drag-over' : ''}`}

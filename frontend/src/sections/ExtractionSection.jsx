@@ -121,7 +121,6 @@ export default function ExtractionSection({ activeVersion, onConfirm, isActive }
           <p className="page-section-sub">AI-extracted parameters from the CAED diagram</p>
         </div>
         <div className="page-header__right">
-          <span className="version-badge">{activeVersion}</span>
         </div>
       </div>
 

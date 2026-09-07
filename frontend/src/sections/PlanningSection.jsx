@@ -129,7 +129,6 @@ export default function PlanningSection({ activeVersion, onCreateReport, isActiv
           <p className="page-section-sub">Define and sequence the manufacturing operations</p>
         </div>
         <div className="page-header__right">
-          <span className="version-badge">{activeVersion}</span>
         </div>
       </div>
 
