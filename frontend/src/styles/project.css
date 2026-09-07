@@ -7,7 +7,7 @@
 .project-shell {
   display: flex;
   min-height: calc(100vh - 56px); /* subtract navbar */
-  padding-top: 56px; /* push below fixed navbar */
+  /* padding-top removed: React navbar is sticky (in-flow), not fixed */
   background: var(--bg-app);
   background-image:
     radial-gradient(ellipse 80% 60% at 10% 50%, rgba(192,192,192,0.03) 0%, transparent 60%),
