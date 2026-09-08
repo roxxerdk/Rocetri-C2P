@@ -1,5 +1,5 @@
 /**
- * Normalized engineering input — one entry per file/page fed to Gemini.
+ * Normalized engineering input — one entry per file/page fed to Claude.
  * The ExtractionInputPreparer converts raw uploaded files into this structure.
  */
 export interface EngineeringInput {

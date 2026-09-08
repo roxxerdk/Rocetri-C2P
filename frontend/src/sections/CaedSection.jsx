@@ -73,7 +73,7 @@ export default function CaedSection({ activeVersion, projectId, uploadedFile, on
       .then(async (response) => {
         const payload = await response.json();
         if (!response.ok || payload.success === false) {
-          throw new Error(payload.message || 'Gemini extraction failed');
+          throw new Error(payload.message || 'Extraction failed');
         }
         onExtractionComplete(payload.data);
       })
@@ -169,7 +169,7 @@ export default function CaedSection({ activeVersion, projectId, uploadedFile, on
               <p className="preview-filename" id="previewFilename">{uploadedFile.name}</p>
               <p className="preview-filesize" id="previewFilesize">{uploadedFile.size}</p>
               <p className="preview-uploaded-at" id="previewUploadedAt">{uploadedFile.uploadedAt}</p>
-              {isExtracting && <p className="preview-processing">Analyzing drawing with Gemini…</p>}
+              {isExtracting && <p className="preview-processing">Processing and adding data into knowledge base…</p>}
               {extractionError && <p className="preview-error">{extractionError}</p>}
             </div>
             <div className="preview-actions">

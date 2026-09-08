@@ -176,6 +176,7 @@ export default function Project() {
           {/* ════ PAGE: REPORT ════ */}
           {activePage === 'report' && (
             <ReportSection
+              projectId={jobId}
               activeVersion={activeVersion}
               isActive={true}
               autoGenerate={autoGenerateReport}

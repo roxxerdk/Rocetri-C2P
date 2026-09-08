@@ -23,28 +23,94 @@ export default function ExtractionSection({ activeVersion, projectId, uploadedFi
   const messagesEndRef = useRef(null);
 
   function contextToFeatures(data) {
-    const contextData = data.contextData || data;
-    const dimensions = contextData.geometry?.overallDimensions || [];
-    const featureRows = (contextData.geometry?.features || []).flatMap((feature, featureIndex) =>
-      (feature.dimensions || []).map((dimension, dimensionIndex) => ({
-        id: `feature-${featureIndex}-${dimensionIndex}`,
-        source: { type: 'feature', featureIndex, dimensionIndex },
-        param: dimension.name || feature.name || feature.type || 'Feature',
-        value: dimension.rawValue ?? dimension.value ?? '',
-        unit: dimension.unit || '—',
-        conf: dimension.critical ? 'high' : 'med',
-        pct: '—',
-      })),
-    );
-    return [...dimensions.map((dimension, index) => ({
-      id: `dimension-${index}`,
-      source: { type: 'dimension', index },
-      param: dimension.name,
-      value: dimension.rawValue ?? dimension.value ?? '',
-      unit: dimension.unit || '—',
-      conf: dimension.critical ? 'high' : 'med',
-      pct: '—',
-    })), ...featureRows];
+    const cd = data.contextData || data;
+    const rows = [];
+
+    // ── Drawing identity ──────────────────────────────────────────────────────
+    if (cd.drawing?.partName)   rows.push({ id: 'partName',   param: 'Part Name',    value: cd.drawing.partName,   unit: '—', conf: 'med', group: 'Drawing' });
+    if (cd.drawing?.partNumber) rows.push({ id: 'partNumber', param: 'Part Number',  value: cd.drawing.partNumber, unit: '—', conf: 'med', group: 'Drawing' });
+    if (cd.drawing?.revision)   rows.push({ id: 'revision',   param: 'Revision',     value: cd.drawing.revision,   unit: '—', conf: 'med', group: 'Drawing' });
+    if (cd.drawing?.drawingType) rows.push({ id: 'drawingType', param: 'Drawing Type', value: cd.drawing.drawingType, unit: '—', conf: 'med', group: 'Drawing' });
+    if (cd.drawing?.units)      rows.push({ id: 'units',      param: 'Units',        value: cd.drawing.units,      unit: '—', conf: 'med', group: 'Drawing' });
+    if (cd.drawing?.scale)      rows.push({ id: 'scale',      param: 'Scale',        value: cd.drawing.scale,      unit: '—', conf: 'med', group: 'Drawing' });
+
+    // ── Material ──────────────────────────────────────────────────────────────
+    if (cd.material?.name)      rows.push({ id: 'mat-name',      param: 'Material',           value: cd.material.name,      unit: '—', conf: 'high', group: 'Material' });
+    if (cd.material?.grade)     rows.push({ id: 'mat-grade',     param: 'Grade / Alloy',      value: cd.material.grade,     unit: '—', conf: 'high', group: 'Material' });
+    if (cd.material?.standard)  rows.push({ id: 'mat-standard',  param: 'Material Standard',  value: cd.material.standard,  unit: '—', conf: 'med',  group: 'Material' });
+    if (cd.material?.condition) rows.push({ id: 'mat-condition', param: 'Material Condition', value: cd.material.condition, unit: '—', conf: 'med',  group: 'Material' });
+
+    // ── General Tolerance ─────────────────────────────────────────────────────
+    if (cd.tolerances?.generalTolerance?.value) {
+      rows.push({ id: 'genTol', param: 'General Tolerance', value: cd.tolerances.generalTolerance.value, unit: '—', conf: 'high', group: 'Tolerance' });
+    }
+
+    // ── Geometric Tolerances (GD&T) ───────────────────────────────────────────
+    (cd.tolerances?.geometricTolerances || []).forEach((gt, i) => {
+      const label = [gt.type, gt.appliesTo].filter(Boolean).join(' → ');
+      const val   = [gt.value, ...(gt.datumReferences || []).map(d => `Datum ${d}`)].filter(Boolean).join(', ');
+      rows.push({ id: `gdt-${i}`, param: `GD&T: ${label}`, value: val || '—', unit: '—', conf: 'high', group: 'Tolerance' });
+    });
+
+    // ── Overall Dimensions ────────────────────────────────────────────────────
+    (cd.geometry?.overallDimensions || []).forEach((dim, i) => {
+      rows.push({
+        id: `dimension-${i}`,
+        source: { type: 'dimension', index: i },
+        param: dim.name,
+        value: dim.rawValue ?? dim.value ?? '',
+        unit: dim.unit || '—',
+        conf: dim.critical ? 'high' : 'med',
+        group: 'Dimensions',
+      });
+    });
+
+    // ── Feature Dimensions ────────────────────────────────────────────────────
+    (cd.geometry?.features || []).forEach((feature, fi) => {
+      (feature.dimensions || []).forEach((dim, di) => {
+        rows.push({
+          id: `feature-${fi}-${di}`,
+          source: { type: 'feature', featureIndex: fi, dimensionIndex: di },
+          param: dim.name || feature.name || feature.type || 'Feature',
+          value: dim.rawValue ?? dim.value ?? '',
+          unit: dim.unit || '—',
+          conf: dim.critical ? 'high' : 'med',
+          group: `Feature: ${feature.name || feature.type || 'unknown'}`,
+        });
+      });
+      // Feature-level notes (preserved callouts from E1/E2)
+      (feature.notes || []).forEach((note, ni) => {
+        if (!note) return;
+        rows.push({ id: `feature-${fi}-note-${ni}`, param: `${feature.name || feature.type} — Note`, value: note, unit: '—', conf: 'med', group: `Feature: ${feature.name || feature.type}` });
+      });
+    });
+
+    // ── Surface Finish ────────────────────────────────────────────────────────
+    (cd.manufacturingRequirements?.surfaceFinish || []).forEach((sf, i) => {
+      if (sf.roughnessRa != null) {
+        rows.push({ id: `sf-${i}`, param: `Surface Finish${sf.appliesTo ? ` (${sf.appliesTo})` : ''}`, value: `Ra ${sf.roughnessRa}`, unit: sf.unit || 'μm', conf: 'med', group: 'Requirements' });
+      }
+    });
+
+    // ── Heat Treatment ────────────────────────────────────────────────────────
+    if (cd.manufacturingRequirements?.heatTreatment?.specification) {
+      const ht = cd.manufacturingRequirements.heatTreatment;
+      rows.push({ id: 'ht', param: 'Heat Treatment', value: [ht.specification, ht.temperatureRange, ht.coolingMethod].filter(Boolean).join(' / '), unit: '—', conf: 'high', group: 'Requirements' });
+    }
+
+    // ── Surface Treatment ─────────────────────────────────────────────────────
+    if (cd.manufacturingRequirements?.surfaceTreatment?.type) {
+      const st = cd.manufacturingRequirements.surfaceTreatment;
+      rows.push({ id: 'st', param: 'Surface Treatment', value: [st.type, st.thickness].filter(Boolean).join(' / '), unit: '—', conf: 'med', group: 'Requirements' });
+    }
+
+    // ── Manufacturing Notes ───────────────────────────────────────────────────
+    (cd.manufacturingRequirements?.manufacturingNotes || []).forEach((note, i) => {
+      if (!note) return;
+      rows.push({ id: `mnote-${i}`, param: `Manufacturing Note ${i + 1}`, value: note, unit: '—', conf: 'med', group: 'Requirements' });
+    });
+
+    return rows;
   }
 
   function hasExtractedRows(data) {
@@ -95,17 +161,47 @@ export default function ExtractionSection({ activeVersion, projectId, uploadedFi
 
   useEffect(() => {
     if (!isActive || !projectId) return;
-    fetch(`http://localhost:3000/api/projects/${projectId}/conversations`)
-      .then(response => response.json())
-      .then(payload => {
-        if (payload.success === false) throw new Error(payload.message || 'Unable to load conversation');
-        const conversation = (payload.data || []).find(item => item.type === 'EXTRACTION');
-        setBotMessages((conversation?.messages || []).map(message => ({
-          role: message.role === 'assistant' ? 'ai' : 'user',
-          text: message.content,
-        })));
-      })
-      .catch(() => setBotMessages([]));
+
+    async function loadConversationAndInit() {
+      // 1. Load any existing conversation
+      const response = await fetch(`http://localhost:3000/api/projects/${projectId}/conversations`);
+      const payload = await response.json();
+      if (payload.success === false) throw new Error(payload.message || 'Unable to load conversation');
+
+      const conversation = (payload.data || []).find(item => item.type === 'EXTRACTION');
+      const existingMessages = (conversation?.messages || []).map(message => ({
+        role: message.role === 'assistant' ? 'ai' : 'user',
+        text: message.content,
+      }));
+
+      if (existingMessages.length > 0) {
+        // Existing conversation — just restore it
+        setBotMessages(existingMessages);
+        return;
+      }
+
+      // 2. No prior messages — fire __INIT__ so bot produces its opening analysis
+      setBotLoading(true);
+      const initResp = await fetch(`http://localhost:3000/api/projects/${projectId}/conversations`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type: 'EXTRACTION', message: '__INIT__' }),
+      });
+      const initPayload = await initResp.json();
+      if (!initResp.ok || initPayload.success === false) {
+        setBotMessages([{ role: 'ai', text: 'Hello! I am your C2P Engineering Assistant. Ask me anything about the extracted drawing, or type "what is missing?" to check planning readiness.' }]);
+        return;
+      }
+      const initMessages = (initPayload.data?.messages || []);
+      const lastMsg = initMessages[initMessages.length - 1];
+      if (lastMsg?.content) {
+        setBotMessages([{ role: 'ai', text: lastMsg.content }]);
+      }
+    }
+
+    loadConversationAndInit()
+      .catch(() => setBotMessages([{ role: 'ai', text: 'Hello! Ask me anything about the extracted drawing.' }]))
+      .finally(() => setBotLoading(false));
   }, [isActive, projectId]);
 
   /* Derived validation status — mirrors updateValidationState() */

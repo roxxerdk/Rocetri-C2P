@@ -16,11 +16,11 @@ export class ExtractionInputPreparer {
    *
    * Images → passed through directly as binary data.
    * PDFs  → converted page-by-page to images using pdf-parse + canvas,
-   *          OR sent as raw PDF bytes if Gemini can handle it natively.
+   *          OR sent as raw PDF bytes when Claude can handle it natively.
    *
    * For hackathon simplicity: PDFs are sent as raw bytes with application/pdf mime type.
-   * Gemini 1.5+ supports PDF input natively via the Files API or inline base64.
-   * If your Gemini model does not support PDFs, swap the PDF branch for image rendering.
+   * Claude supports PDF input natively through base64 document blocks.
+   * If the configured Claude model does not support PDFs, swap the PDF branch for image rendering.
    */
   async prepare(files: Express.Multer.File[]): Promise<EngineeringInput[]> {
     if (!files || files.length === 0) {
@@ -75,7 +75,7 @@ export class ExtractionInputPreparer {
 
   /**
    * PDF handling:
-   * - Gemini 1.5 Flash/Pro supports PDFs natively when sent as inline data or via Files API.
+   * - Claude supports PDFs natively as inline base64 document blocks.
    * - For hackathon: send each PDF as a single input with application/pdf mime type.
    * - If multi-page PDFs need per-page handling, replace this with a pdf-to-image renderer.
    */
@@ -96,7 +96,7 @@ export class ExtractionInputPreparer {
       this.logger.warn(`Could not determine page count for ${file.originalname} — treating as single input`);
     }
 
-    // Send the full PDF as one input — Gemini handles multi-page internally
+    // Send the full PDF as one input — Claude handles multi-page internally
     return [
       {
         filename: file.originalname,

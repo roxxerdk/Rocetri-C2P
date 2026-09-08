@@ -34,12 +34,12 @@ export class EngineeringController {
     });
   }
 
-  // ── Extract (multi-file, real Gemini extraction) ──────────────────────────────
+  // ── Extract (multi-file, real Claude extraction) ──────────────────────────────
 
   /**
    * POST /api/projects/:projectId/engineering/extract-files
    * Accepts one or more CAED files (images/PDFs) as one engineering product.
-   * Runs Gemini multimodal extraction → creates ONE EXTRACTED context.
+  * Runs Claude multimodal extraction → creates ONE EXTRACTED context.
    *
    * Form-data fields:
    *   files[]  — one or more files (max 10)
