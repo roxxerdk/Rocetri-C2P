@@ -7,18 +7,7 @@ export interface MongodbConfig {
   uri: string;
 }
 
-export interface GeminiConfig {
+export interface AnthropicConfig {
   apiKey: string;
   model: string;
-}
-
-export interface OpenAiConfig {
-  apiKey: string;
-  model: string;
-}
-
-export interface QwenConfig {
-  apiKey: string;
-  model: string;
-  baseUrl: string;
 }

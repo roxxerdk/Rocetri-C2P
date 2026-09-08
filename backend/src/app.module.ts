@@ -21,7 +21,7 @@ import { AiModule } from './ai/ai.module';
     // ─── Cross-cutting ────────────────────────────────
     WorkflowModule,    // state machine + invalidation
     ValidationModule,  // schema + business validation
-    AiModule,          // Gemini + Qwen provider abstraction
+    AiModule,          // Configured AI provider abstraction
 
     // ─── Domain Modules ───────────────────────────────
     JobsModule,        // async job tracking (imported first — others depend on it)

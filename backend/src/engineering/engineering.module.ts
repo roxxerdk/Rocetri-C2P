@@ -3,7 +3,7 @@ import { MongooseModule } from '@nestjs/mongoose';
 import { EngineeringController, ConversationsController } from './engineering.controller';
 import { EngineeringService } from './engineering.service';
 import { ContextValidationService } from './services/context-validation.service';
-import { GeminiExtractionService } from './extraction/gemini-extraction.service';
+import { ClaudeExtractionService } from './extraction/claude-extraction.service';
 import { ExtractionInputPreparer } from './extraction/extraction-input.preparer';
 import { ExtractionSchemaValidator } from './extraction/extraction-schema.validator';
 import { Context, ContextSchema } from './schemas/context.schema';
@@ -22,13 +22,13 @@ import { AiModule } from '../ai/ai.module';
     forwardRef(() => ProjectsModule),
     forwardRef(() => JobsModule),
     WorkflowModule,
-    AiModule,   // provides GeminiProvider
+    AiModule,   // provides ClaudeProvider
   ],
   controllers: [EngineeringController, ConversationsController],
   providers: [
     EngineeringService,
     ContextValidationService,
-    GeminiExtractionService,
+    ClaudeExtractionService,
     ExtractionInputPreparer,
     ExtractionSchemaValidator,
   ],

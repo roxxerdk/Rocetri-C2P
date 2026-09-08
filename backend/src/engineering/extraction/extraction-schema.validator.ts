@@ -15,7 +15,7 @@ export class ExtractionSchemaValidator {
   private readonly logger = new Logger(ExtractionSchemaValidator.name);
 
   /**
-   * Parses and validates Gemini's raw text response.
+   * Parses and validates Claude's raw text response.
    * Returns a sanitized EngineeringContextData on success.
    * Throws if the response cannot be parsed or is structurally invalid.
    *
@@ -23,7 +23,7 @@ export class ExtractionSchemaValidator {
    * Missing engineering values (null fields) are perfectly valid in EXTRACTED context.
    */
   parseAndValidate(rawResponse: string): EngineeringContextData {
-    // ── 1. Strip markdown code fences if Gemini wrapped its output ────────────
+    // ── 1. Strip markdown code fences if Claude wrapped its output ────────────
     const cleaned = this.stripMarkdown(rawResponse);
 
     // ── 2. Parse JSON ─────────────────────────────────────────────────────────
@@ -31,11 +31,11 @@ export class ExtractionSchemaValidator {
     try {
       parsed = JSON.parse(cleaned);
     } catch (e) {
-      throw new Error(`Gemini response is not valid JSON: ${e.message}`);
+      throw new Error(`Claude response is not valid JSON: ${e.message}`);
     }
 
     if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
-      throw new Error('Gemini response must be a JSON object');
+      throw new Error('Claude response must be a JSON object');
     }
 
     // ── 3. Strip any AI-generated database metadata fields ────────────────────
@@ -270,7 +270,7 @@ export class ExtractionSchemaValidator {
     return trimmed.length > 0 ? trimmed : null;
   }
 
-  /** Strip markdown code fences Gemini sometimes adds despite instructions */
+  /** Strip markdown code fences Claude sometimes adds despite instructions */
   private stripMarkdown(text: string): string {
     return text
       .replace(/^```(?:json)?\s*/i, '')

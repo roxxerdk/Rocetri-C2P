@@ -1,8 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { IAiProvider, AiRequest, AiResponse } from './interfaces/ai-provider.interface';
-import { GeminiProvider } from './providers/gemini.provider';
-import { QwenProvider } from './providers/qwen.provider';
-import { OpenAiProvider } from './providers/openai.provider';
+import { ClaudeProvider } from './providers/claude.provider';
 
 @Injectable()
 export class AiService {
@@ -10,13 +8,10 @@ export class AiService {
   private readonly providers: Map<string, IAiProvider> = new Map();
 
   constructor(
-    private readonly geminiProvider: GeminiProvider,
-    private readonly qwenProvider: QwenProvider,
-    private readonly openAiProvider: OpenAiProvider,
+    private readonly claudeProvider: ClaudeProvider,
   ) {
-    this.providers.set('gemini', geminiProvider);
-    this.providers.set('qwen', qwenProvider);
-    this.providers.set('openai', openAiProvider);
+    this.providers.set('claude', claudeProvider);
+    this.providers.set('anthropic', claudeProvider);
   }
 
   /**
@@ -30,13 +25,16 @@ export class AiService {
     return provider;
   }
 
-  /**
-   * Generate using a specific provider.
-   */
+  /** Generate using Claude only. */
   async generate(providerName: string, request: AiRequest): Promise<AiResponse> {
-    const provider = this.getProvider(providerName);
-    this.logger.log(`Generating via ${providerName}...`);
-    return provider.generate(request);
+    if (providerName !== 'claude' && providerName !== 'anthropic') {
+      throw new Error(`Only Claude is enabled. Received provider '${providerName}'.`);
+    }
+    if (!this.claudeProvider.isAvailable()) {
+      throw new Error('Claude provider is not configured');
+    }
+    this.logger.log('Generating via Claude...');
+    return this.claudeProvider.generate(request);
   }
 
   /**

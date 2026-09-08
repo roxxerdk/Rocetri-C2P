@@ -1,12 +1,10 @@
 import { Module } from '@nestjs/common';
 import { AiService } from './ai.service';
-import { GeminiProvider } from './providers/gemini.provider';
-import { QwenProvider } from './providers/qwen.provider';
-import { OpenAiProvider } from './providers/openai.provider';
+import { ClaudeProvider } from './providers/claude.provider';
 
 @Module({
-  providers: [AiService, GeminiProvider, QwenProvider, OpenAiProvider],
-  exports: [AiService, GeminiProvider, OpenAiProvider],
+  providers: [AiService, ClaudeProvider],
+  exports: [AiService, ClaudeProvider],
 })
 export class AiModule {}
 

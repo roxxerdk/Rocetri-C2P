@@ -1,172 +1,72 @@
 /**
- * Shared engineering drawing inspection rules.
- * Injected into C4 (Geometry & Features) and C5 (Dimensions & Tolerances) system prompts.
- * Do NOT change the pipeline architecture — this is a shared instruction block only.
+ * 3-Stage Claude Extraction Pipeline
+ *
+ * E1 — Priority Engineering Information (tolerances, material, faces, special notes)
+ * E2 — Geometry + Features + Dimensions
+ * E3 — Consolidation + Completeness Check + Final Unified Engineering Context
+ *
+ * All three are separate Claude calls with their own focused system and user prompts.
  */
-export const ENGINEERING_DRAWING_INSPECTION_RULES = `
-You are interpreting a technical engineering drawing, not summarizing an image.
 
-Systematically inspect ALL relevant parts of ALL supplied views/pages before extracting information:
+// ─────────────────────────────────────────────────────────────────────────────
+// EXTRACTOR 1: PRIORITY ENGINEERING INFORMATION
+// ─────────────────────────────────────────────────────────────────────────────
 
+export const E1_SYSTEM = `You are a precision engineering drawing analyst specialising in tolerances, material specifications, and manufacturing requirements.
+
+All supplied files/images represent ONE physical product — different files may show different views of the same part.
+
+Your job is to systematically inspect ALL parts of ALL supplied views before extracting anything:
+- every drawing view (front, side, top, section, detail, isometric)
 - title block
-- notes
-- specification/material tables
-- critical dimension tables
-- all drawing views
-- section views
-- detail views
-- dimension callouts
-- tolerances and GD&T frames
+- notes and general notes block
+- tolerance blocks and tolerance tables
+- GD&T feature control frames
+- specification and material tables
 
-Do not extract only the largest or most obvious dimensions.
+Return structured JSON only. No explanations. No markdown.`;
 
-Treat engineering callouts as complete information units.
+export const E1_PROMPT = `Extract ONLY the following priority information from the engineering drawing.
 
-Examples:
+─── 1. TOLERANCES (highest priority) ───────────────────────────────────────────
+Extract every tolerance specification visible in the drawing:
+- dimensional tolerances: ± values, bilateral, unilateral
+- limit tolerances: upper/lower limits (e.g. 10.00 / 9.95)
+- ISO fits: H7, h6, H7/k6, G6, etc.
+- general tolerance block (applies unless otherwise specified)
+- GD&T feature control frames: flatness, straightness, roundness, cylindricity, perpendicularity, parallelism, angularity, position, concentricity, runout, total runout, profile
+- datum identifiers: A, B, C, etc.
+- tolerance tables
+- any dimension explicitly marked CRITICAL or with special tolerance
 
-"4X Ø10 THRU" means:
-- quantity: 4
-- feature: through hole
-- diameter: 10 mm
+Preserve original engineering notation. Do NOT reduce "Ø40 H7" to just "40".
 
-"2X Ø20 depth 12" means:
-- quantity: 2
-- feature: counterbore
-- diameter: 20 mm
-- depth: 12 mm
+─── 2. MATERIAL ────────────────────────────────────────────────────────────────
+- material name (e.g. Aluminium, Steel, Brass)
+- grade/alloy (e.g. 6061-T6, AISI 316, C45)
+- standard/specification (e.g. ASTM B221, EN 573, DIN 17200)
+- condition/temper (e.g. Annealed, Hardened, T6)
+Do NOT infer material from visual appearance or part shape.
 
-"R10 (4X)" means radius 10 mm applied at 4 locations.
+─── 3. PHYSICAL FACES/SIDES OF THE PRODUCT ────────────────────────────────────
+Determine the actual physical faces of the manufactured part (NOT the number of drawing views).
+Based on the combined geometry across all views, identify meaningful physical faces:
+e.g. top face, bottom face, front face, rear face, left face, right face, bore face, flange face, inclined face.
+Do NOT assume 6 faces for every part. Return only meaningful faces.
 
-"1 × 45° TYP" means a 1 mm, 45° chamfer applied typically to repeated locations.
+─── 4. SPECIAL NOTES AND MANUFACTURING REQUIREMENTS ───────────────────────────
+Extract any drawing notes or requirements that affect manufacturing or process planning:
+- heat treatment instructions
+- special machining notes
+- deburring/edge break requirements
+- coating, anodizing, plating, painting instructions
+- inspection requirements
+- handling or cleanliness restrictions
+- assembly requirements
+- unusual constraints or exceptions
+Preserve the original note text — do not aggressively summarise.
 
-"Ø40 H7" means diameter 40 mm with H7 fit/tolerance.
-
-Information about one physical feature may be distributed across multiple views. Combine information across views only when they clearly refer to the same feature.
-
-Do not guess or invent missing information.
-
-If information is unclear or unreadable, leave it unresolved and add a warning.
-
-Prioritize complete extraction of explicitly visible engineering information over a simplified summary.
-`.trim();
-
-/**
- * Container 1: Input Understanding
- * Purpose: Map the document structure before any extraction.
- * Output: compact drawingMap only — no engineering extraction.
- */
-
-export const C1_SYSTEM = `You are an engineering document analyst.
-Your ONLY job is to understand the structure of the supplied engineering drawing input set.
-Do NOT extract dimensions, features, or material details.
-Return compact structu+red JSON only — no explanations, no markdown.`;
-
-export const C1_PROMPT = `Analyse all supplied files/images. They represent ONE product unless clearly indicated otherwise.
-
-Identify:
-- Whether inputs represent one product or multiple products
-- What drawing views/pages are present (front, side, top, section, detail, isometric, etc.)
-- Where title blocks appear (which image/page/area)
-- Where notes or text blocks appear
-- Where dimensions are concentrated
-- Where tolerances or GD&T symbols appear
-- Where tables or specification blocks appear
-- Any concerns about image quality or readability
-
-Return ONLY this JSON (fill arrays with short descriptive strings, keep it compact):
-
-{
-  "productScope": "ONE_PRODUCT" | "MULTIPLE_PRODUCTS" | "UNCERTAIN",
-  "views": [],
-  "sections": [],
-  "detailViews": [],
-  "informationLocations": {
-    "titleBlocks": [],
-    "notes": [],
-    "dimensions": [],
-    "tables": [],
-    "tolerances": []
-  },
-  "inputCount": 0,
-  "warnings": []
-}
-
-Rules:
-- Keep descriptions SHORT (e.g. "image 1 - front view", "image 2 top-right title block")
-- Do NOT extract any dimensions, materials, or features
-- If something is unclear, add a short warning string
-- Return valid JSON only`;
-
-/**
- * Container 2: Drawing Identity
- * Input: original files + drawingMap
- */
-export const C2_SYSTEM = `You are an engineering drawing identification specialist.
-Extract ONLY drawing-level identification and metadata.
-Do NOT extract geometry, material, dimensions, or features.
-Return structured JSON only — no explanations, no markdown.`;
-
-export function buildC2Prompt(drawingMap: object): string {
-  return `Using the drawing map below as a guide to where title block and identification information is located, extract the drawing identity fields from the supplied files.
-
-DRAWING MAP (use to focus your attention):
-${JSON.stringify(drawingMap, null, 2)}
-
-Extract ONLY:
-- partName (from title block or drawing header)
-- partNumber (drawing/part number)
-- revision (revision letter/number)
-- drawingType: "SINGLE_PART" | "ASSEMBLY" | "UNKNOWN"
-- units (mm, inches, etc.)
-- scale (e.g. "1:1", "1:2")
-- projection ("FIRST_ANGLE" | "THIRD_ANGLE" | null)
-
-Return ONLY this JSON:
-
-{
-  "partName": string | null,
-  "partNumber": string | null,
-  "revision": string | null,
-  "drawingType": "SINGLE_PART" | "ASSEMBLY" | "UNKNOWN",
-  "units": string | null,
-  "scale": string | null,
-  "projection": string | null,
-  "warnings": []
-}
-
-Rules:
-- Use null when absent — do NOT guess
-- Do NOT extract material, dimensions, or features
-- Return valid JSON only`;
-}
-
-/**
- * Container 3: Material & Requirements
- * Input: original files + drawingMap
- */
-export const C3_SYSTEM = `You are a manufacturing requirements extraction specialist.
-Extract ONLY material and non-geometric manufacturing requirements.
-Do NOT extract geometry, dimensions, or drawing identity.
-Return structured JSON only — no explanations, no markdown.`;
-
-export function buildC3Prompt(drawingMap: object): string {
-  return `Using the drawing map below as a guide to where material and notes information is located, extract material and manufacturing requirements from the supplied files.
-
-DRAWING MAP:
-${JSON.stringify(drawingMap, null, 2)}
-
-Focus especially on: title blocks, notes columns, specification tables, general notes.
-
-Extract:
-- material.name (e.g. "Aluminium", "Stainless Steel")
-- material.grade (e.g. "6061-T6", "AISI 316")
-- material.standard (e.g. "ASTM B221", "EN 573")
-- material.condition (e.g. "Annealed", "Hardened")
-- heatTreatment: { specification, temperatureRange, coolingMethod, standard } | null
-- surfaceTreatment: { type, thickness, applyStage, notes } | null
-- surfaceFinish: array of { appliesTo, roughnessRa, unit, notes }
-- manufacturingNotes: string[]
-
+─── OUTPUT SCHEMA ──────────────────────────────────────────────────────────────
 Return ONLY this JSON:
 
 {
@@ -176,6 +76,31 @@ Return ONLY this JSON:
     "standard": string | null,
     "condition": string | null
   },
+  "generalTolerance": {
+    "value": string | null,
+    "appliesUnlessSpecified": boolean
+  },
+  "dimensionalTolerances": [
+    {
+      "dimension": string,
+      "rawCallout": string,
+      "value": number | null,
+      "unit": string | null,
+      "tolerance": string,
+      "critical": boolean
+    }
+  ],
+  "geometricTolerances": [
+    {
+      "type": string,
+      "value": string | null,
+      "datumReferences": [],
+      "appliesTo": string | null
+    }
+  ],
+  "physicalFaces": [
+    { "name": string, "description": string | null }
+  ],
   "heatTreatment": {
     "specification": string,
     "temperatureRange": string | null,
@@ -191,223 +116,183 @@ Return ONLY this JSON:
   "surfaceFinish": [
     { "appliesTo": string | null, "roughnessRa": number | null, "unit": string | null, "notes": string | null }
   ],
+  "specialNotes": [],
   "manufacturingNotes": [],
   "warnings": []
 }
 
 Rules:
-- Do NOT infer material from appearance or part shape
-- Do NOT invent heat treatment or surface treatment when not stated
-- Use null for absent optional fields
+- Focus ONLY on tolerances, material, faces, and special notes
+- Do NOT extract general dimensions, hole sizes, or features — Extractor 2 handles those
+- Use null for missing fields; do NOT guess or invent values
+- For unreadable or ambiguous callouts, add a warning string
 - Return valid JSON only`;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// EXTRACTOR 2: GEOMETRY + FEATURES + DIMENSIONS
+// ─────────────────────────────────────────────────────────────────────────────
+
+export const E2_SYSTEM = `You are a precision engineering drawing analyst specialising in geometry, manufacturing features, and dimensional extraction.
+
+All supplied files/images represent ONE physical product — different files may show different views of the same part.
+
+You are interpreting a technical engineering drawing, not describing an image.
+
+Systematically sweep the ENTIRE drawing before extracting anything:
+- all drawing views (front, side, top, isometric)
+- section views (SECTION A-A, B-B, etc.)
+- detail views (DETAIL B, DETAIL C, etc.)
+- every dimension callout, leader line, and annotation
+- dimension origin and destination
+- every feature callout
+
+Treat engineering callouts as complete information units:
+"4X Ø10 THRU" = quantity 4, through hole, diameter 10 mm
+"2X Ø20 ▽12" = quantity 2, counterbore, diameter 20 mm, depth 12 mm
+"R10 (4X)" = radius 10 mm at 4 locations
+"1 × 45° TYP" = 1 mm × 45° chamfer, applied typically
+"Ø40 H7" = diameter 40 mm with H7 fit (tolerance handled by Extractor 1)
+"M10 × 1.5 THRU" = metric thread M10, pitch 1.5 mm, through
+
+Do NOT reduce callouts to single numbers. Preserve quantity, type, and notation.
+Do NOT invent dimensions not visible in the drawing.
+Return structured JSON only. No explanations. No markdown.`;
+
+export function buildE2Prompt(e1Summary: object): string {
+  return `Extract all geometry, manufacturing features, and dimensional information from the engineering drawing.
+
+PRIORITY CONTEXT FROM EXTRACTOR 1 (already extracted — do not re-extract these):
+${JSON.stringify(e1Summary, null, 2)}
+
+─── 1. OVERALL DIMENSIONS ──────────────────────────────────────────────────────
+Extract the overall bounding/principal dimensions of the part:
+- length, width, height, overall diameter, overall length, etc.
+Each dimension:
+{
+  "name": descriptive name (e.g. "overallLength", "outerDiameter"),
+  "value": parsed number if safely a single number, else null,
+  "rawValue": EXACT callout text (e.g. "Ø80", "150", "45.5"),
+  "unit": "mm" | "in" | "°" | null,
+  "tolerance": copy from drawing if shown here, else null,
+  "critical": false,
+  "quantity": number from "NX" prefix or null
 }
 
-/**
- * Container 4: Geometry & Features
- * Input: original files + drawingMap
- */
-export const C4_SYSTEM = `You are an engineering feature recognition specialist.
-Identify the physical geometry and manufacturing features of the product.
-Do NOT focus on precise dimensions — those are handled separately.
-Return structured JSON only — no explanations, no markdown.
+─── 2. MANUFACTURING FEATURES ──────────────────────────────────────────────────
+Identify ALL manufacturing features. For each feature:
+- Look across ALL views to combine information about the same physical feature
+- Do NOT create duplicate features for the same physical feature in multiple views
+- Leave dimensions[] populated with all visible dimensional callouts for the feature
 
-${ENGINEERING_DRAWING_INSPECTION_RULES}`;
+Feature types: HOLE, BORE, COUNTERBORE, COUNTERSINK, SLOT, POCKET, THREAD, SHAFT, CYLINDER, STEP, SHOULDER, KEYWAY, CHAMFER, FILLET, ARC, CUTOUT, GEAR, OTHER
 
-export function buildC4Prompt(drawingMap: object): string {
-  return `Using the drawing map below, identify all meaningful physical and manufacturing features across all drawing views for the ONE product shown in the supplied files.
+Feature structure:
+{
+  "type": feature type string,
+  "name": short descriptive name | null,
+  "quantity": number from callout (e.g. "4X" → 4) | null,
+  "locationReference": position on part | null,
+  "notes": ["EXACT callout text visible in drawing — do not discard"],
+  "dimensions": [ same Dimension structure as above ]
+}
 
-DRAWING MAP:
-${JSON.stringify(drawingMap, null, 2)}
+─── 3. REPEATED AND SYMMETRIC FEATURES ─────────────────────────────────────────
+Detect and capture multipliers:
+- "2X", "4X" → quantity field on the feature
+- "TYP" → note that it applies typically
+- "EQ SP" → note equal spacing
+- "PCD 60" or bolt circle → capture spacing/circle dimension
 
-Do not perform only visual shape recognition. Capture the complete engineering callout visibly associated with each feature.
-
-Look for ALL of the following feature types across every view, section, and detail:
-- holes (through holes, blind holes)
-- bores
-- counterbores
-- countersinks
-- slots
-- pockets
-- threads (internal and external)
-- steps
-- shoulders
-- grooves
-- chamfers
-- fillets and radii
-- cutouts
-- repeated/symmetric features
-
-For each feature capture:
-- type: one of HOLE, BORE, COUNTERBORE, COUNTERSINK, SLOT, POCKET, THREAD, SHAFT, CYLINDER, STEP, SHOULDER, KEYWAY, CHAMFER, FILLET, ARC, CUTOUT, GEAR, OTHER
-- name: short descriptive name | null
-- quantity: count from callout or view (e.g. "4X" → 4) | null
-- locationReference: where on the part it is located | null
-- notes: include the EXACT visible engineering callout text (e.g. "4X Ø10 THRU", "M8 × 1.25 THRU", "1 × 45° TYP") — do not discard callouts because dimensions will be processed later
-- dimensions: leave as [] — Container 5 populates these
-
-Overall geometry:
-- overallShape: brief description of the part's overall form
-- overallDimensions: leave as [] — Container 5 handles these
-
+─── OUTPUT SCHEMA ───────────────────────────────────────────────────────────────
 Return ONLY this JSON:
 
 {
   "overallShape": string | null,
+  "drawing": {
+    "partName": string | null,
+    "partNumber": string | null,
+    "revision": string | null,
+    "drawingType": "SINGLE_PART" | "ASSEMBLY" | "UNKNOWN",
+    "units": string | null,
+    "scale": string | null,
+    "projection": string | null
+  },
   "overallDimensions": [],
   "features": [
     {
       "type": string,
       "name": string | null,
       "quantity": number | null,
-      "dimensions": [],
       "locationReference": string | null,
-      "notes": ["exact callout text if visible"]
+      "notes": [],
+      "dimensions": []
     }
   ],
+  "assembly": {
+    "components": [
+      { "itemNumber": number | null, "name": string, "partNumber": string | null, "material": string | null, "quantity": number | null }
+    ]
+  } | null,
+  "sourceViews": [],
   "warnings": []
 }
 
 Rules:
-- Do NOT duplicate features that appear in multiple views — merge across views when they clearly refer to the same feature
-- Do NOT invent features not visible in the drawing
-- Preserve the exact visible callout text in notes — do not paraphrase or discard it
-- Dimensions go in Container 5 — leave dimensions arrays empty here
-- Add a warning string for any feature where the callout is partially unreadable
+- rawValue is MANDATORY for every dimension — the original callout text
+- Do NOT invent values — if unclear, skip and add a warning
+- assembly must be null for single-part drawings
+- sourceViews: list the views/pages you used (e.g. ["FRONT", "SECTION A-A", "DETAIL B"])
 - Return valid JSON only`;
 }
 
-/**
- * Container 5: Dimensions & Tolerances
- * Input: original files + drawingMap + compact feature list from C4
- */
-export const C5_SYSTEM = `You are an engineering dimension and tolerance extraction specialist.
-Extract all numerical engineering information and tolerance specifications.
-Return structured JSON only — no explanations, no markdown.
+// ─────────────────────────────────────────────────────────────────────────────
+// EXTRACTOR 3: CONSOLIDATION + COMPLETENESS CHECK + FINAL JSON
+// ─────────────────────────────────────────────────────────────────────────────
 
-${ENGINEERING_DRAWING_INSPECTION_RULES}`;
+export const E3_SYSTEM = `You are an engineering data consolidation specialist.
+You receive structured JSON outputs from two previous extraction passes and merge them into one final Unified Engineering Context.
+You do NOT re-read the original CAED drawing files.
+Return structured JSON only. No explanations. No markdown.`;
 
-export function buildC5Prompt(drawingMap: object, featureSummary: object): string {
-  return `Extract ALL dimensions and tolerances by systematically sweeping the entire drawing. Do not stop after finding overall dimensions.
+export function buildE3Prompt(e1Output: object, e2Output: object): string {
+  return `Merge the following two structured extraction outputs into one final Unified Engineering Context.
 
-DRAWING MAP (use to focus on where dimensions and tolerances appear):
-${JSON.stringify(drawingMap, null, 2)}
+EXTRACTOR 1 OUTPUT (priority: tolerances, material, faces, special notes):
+${JSON.stringify(e1Output, null, 2)}
 
-IDENTIFIED FEATURES (use to associate dimensions with features where evidence supports it):
-${JSON.stringify(featureSummary, null, 2)}
+EXTRACTOR 2 OUTPUT (geometry, features, dimensions, drawing identity):
+${JSON.stringify(e2Output, null, 2)}
 
-Extract in these categories:
+─── YOUR RESPONSIBILITIES ───────────────────────────────────────────────────────
 
-1. OVERALL DIMENSIONS
-   - length, width, height, overall diameter, overall length, etc.
+1. MERGE: Combine both outputs into one consistent engineering representation.
 
-2. FEATURE DIMENSIONS
-   - diameters (Ø), radii (R), depths, lengths, widths, angles, thread specs,
-     chamfer sizes, spacing, bolt circle diameters, groove dimensions, slot dimensions
+2. DEDUPLICATE: Remove duplicate information. If the same tolerance appears in both outputs, keep one.
 
-3. REPEATED FEATURES — preserve multiplier information
-   - "2X Ø10 THRU"    → quantity: 2, rawValue: "2X Ø10 THRU", value: 10, name: "holeDiameter"
-   - "4X R5"          → quantity: 4, rawValue: "4X R5", value: 5, name: "cornerRadius"
-   - "TYP" callouts   → note typical application in rawValue
-   - "EQ SP" callouts → note equal spacing in rawValue
+3. CONNECT: Associate dimensional tolerances from E1 with the correct features/dimensions from E2 where clearly supported.
 
-4. TOLERANCES
-   - ± dimensional tolerances (e.g. ±0.05)
-   - limit tolerances (e.g. 10.00/9.95)
-   - ISO fits (e.g. H7, g6, H7/k6)
-   - general/default tolerance block
-   - GD&T feature control frames (flatness, perpendicularity, runout, position, etc.)
-   - datum identifiers (A, B, C)
+4. PRESERVE E1 PRIORITY: Tolerances, material, and special notes from Extractor 1 take precedence over E2 when they conflict.
 
-CRITICAL RULE — preserve complete engineering callout meaning:
-"4X Ø10 THRU" must NOT be reduced to only value = 10.
-It must capture: rawValue = "4X Ø10 THRU", value = 10, unit = "mm", quantity = 4, name = "throughHoleDiameter"
+5. DETECT CONFLICTS: If E1 and E2 contradict each other on the same field:
+   - Do NOT silently pick one value
+   - Set the field to null and add an extractionWarning explaining the conflict
 
-Dimension structure:
-{
-  "name": string,              // descriptive name: "outerDiameter", "threadSpec", "slotWidth", etc.
-  "value": number | null,      // parsed numeric ONLY when safely a single number — null for "M10 x 1.5", "H7", "R5±0.1"
-  "rawValue": string,          // ALWAYS the original callout text: "Ø40", "4X Ø10 THRU", "M10 x 1.5", "R5"
-  "unit": string | null,       // "mm", "in", "°", etc.
-  "tolerance": string | null,  // "±0.05", "H7", "+0.02/-0.00", etc.
-  "critical": boolean,         // true only when explicitly marked critical or safety-related
-  "quantity": number | null,   // from multiplier: "4X" → 4, "TYP" → null
-  "featureRef": string | null  // name of associated feature from the feature list, or null
-}
+6. COMPLETENESS CHECK: Determine if the extracted information is sufficient for process planning.
+Check these categories:
+   - product identity (partName or partNumber) — REQUIRED
+   - material.name — REQUIRED
+   - drawing.units — REQUIRED
+   - drawing.drawingType (not UNKNOWN) — REQUIRED
+   - at least one usable dimension (rawValue present) — REQUIRED
+   - tolerances — only required if present in drawing
+   - special manufacturing requirements — only required if present in drawing
+   Do NOT fail for missing optional information (e.g. no threads, no GD&T, no surface treatment).
+
+7. ENGINEERING SUMMARY: Write a short compact text summary of the part (2-4 sentences).
+
+─── OUTPUT SCHEMA (Unified Engineering Context) ─────────────────────────────────
 
 Return ONLY this JSON:
-
-{
-  "overallDimensions": [],
-  "featureDimensions": [],
-  "generalTolerance": {
-    "value": string | null,
-    "appliesUnlessSpecified": boolean
-  },
-  "geometricTolerances": [
-    {
-      "type": string,
-      "value": string | null,
-      "datumReferences": [],
-      "appliesTo": string | null
-    }
-  ],
-  "warnings": []
-}
-
-Rules:
-- rawValue is MANDATORY for every dimension — never omit it
-- value = single parsed number only when unambiguously safe; null otherwise
-- quantity from "NX" callout prefix goes on the dimension itself
-- Do NOT invent values — if unclear or unreadable, add a warning and skip that dimension
-- featureRef may be null when the association is uncertain
-- Return valid JSON only`;
-}
-
-/**
- * Container 6: Final Merge & Conflict Resolution
- * Input: drawingMap + C2 + C3 + C4 + C5 outputs (JSON only — no original files)
- */
-export const C6_SYSTEM = `You are an engineering data integration specialist.
-Merge structured extraction outputs into one final Unified Engineering Context.
-Resolve conflicts intelligently. Preserve all valid information.
-Return the final unified schema JSON only — no explanations, no markdown.`;
-
-export function buildC6Prompt(
-  drawingMap: object,
-  c2DrawingIdentity: object,
-  c3Material: object,
-  c4Geometry: object,
-  c5Dimensions: object,
-): string {
-  return `Merge the following structured extraction outputs into ONE Unified Engineering Context.
-
-DRAWING MAP:
-${JSON.stringify(drawingMap, null, 2)}
-
-DRAWING IDENTITY (Container 2):
-${JSON.stringify(c2DrawingIdentity, null, 2)}
-
-MATERIAL & REQUIREMENTS (Container 3):
-${JSON.stringify(c3Material, null, 2)}
-
-GEOMETRY & FEATURES (Container 4):
-${JSON.stringify(c4Geometry, null, 2)}
-
-DIMENSIONS & TOLERANCES (Container 5):
-${JSON.stringify(c5Dimensions, null, 2)}
-
-Your responsibilities:
-1. Merge all outputs into the schema below.
-2. Connect featureDimensions from Container 5 to the correct features from Container 4 using featureRef.
-3. Remove duplicate information caused by multiple views.
-4. Detect and resolve conflicts:
-   - Prefer explicit over inferred information
-   - Prefer information supported by multiple sources
-   - If unresolvable: use null and add extractionWarning
-5. Collect ALL warnings from all containers into extractionWarnings.
-6. sourceViews should reflect what views/pages were identified.
-
-Return ONLY this JSON matching the Unified Engineering Context schema exactly:
 
 {
   "drawing": {
@@ -462,14 +347,19 @@ Return ONLY this JSON matching the Unified Engineering Context schema exactly:
   "extractionMetadata": {
     "sourceViews": [],
     "confidence": number | null,
-    "extractionWarnings": []
+    "extractionWarnings": [],
+    "engineeringSummary": string | null,
+    "missingCompulsoryFields": [],
+    "planningReady": boolean
   }
 }
 
 Rules:
 - assembly must be null for SINGLE_PART drawings
-- Collect ALL warnings from ALL containers into extractionWarnings
-- Do NOT add database fields (_id, projectId, version, createdAt, etc.)
-- Do NOT perform planning-readiness validation
+- Collect ALL warnings from E1 and E2 into extractionWarnings
+- missingCompulsoryFields: list any REQUIRED fields that are still missing after merge
+- planningReady: true only if missingCompulsoryFields is empty
+- engineeringSummary: 2-4 sentences describing the part for quick context
+- Do NOT add database metadata fields (_id, projectId, version, createdAt, etc.)
 - Return valid JSON only`;
 }

@@ -24,7 +24,7 @@ export interface AiResponse {
 }
 
 /**
- * AI Provider interface — implemented by Gemini and Qwen adapters.
+ * AI Provider interface implemented by the configured model adapters.
  */
 export interface IAiProvider {
   readonly name: string;

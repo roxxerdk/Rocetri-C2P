@@ -66,3 +66,5 @@ export enum FeatureType {
   OTHER = 'OTHER',
 }
 
+
+export * from '../../planning/ontology/enums';

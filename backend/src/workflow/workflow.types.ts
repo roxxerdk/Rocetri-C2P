@@ -7,8 +7,8 @@ export type WorkflowOperation = 'extract' | 'correct' | 'verify' | 'plan' | 'rep
 // Defines which operations are allowed from each workflow stage
 export const WORKFLOW_TRANSITIONS: Record<WorkflowStage, WorkflowOperation[]> = {
   [WorkflowStage.UPLOADED]: ['extract'],
-  [WorkflowStage.EXTRACTED]: ['extract', 'correct'],
-  [WorkflowStage.CORRECTED]: ['extract', 'correct', 'verify'],
+  [WorkflowStage.EXTRACTED]: ['extract', 'correct', 'verify', 'plan'],
+  [WorkflowStage.CORRECTED]: ['extract', 'correct', 'verify', 'plan'],
   [WorkflowStage.VERIFIED]: ['extract', 'correct', 'verify', 'plan'],
   [WorkflowStage.PLANNED]: ['extract', 'correct', 'verify', 'plan', 'report'],
 };

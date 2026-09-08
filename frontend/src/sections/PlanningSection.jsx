@@ -1,49 +1,30 @@
 import { useState, useRef, useEffect } from 'react';
 
-/* Drag-handle SVG */
-function DragHandle() {
-  return (
-    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <circle cx="9"  cy="5"  r="1"/><circle cx="9"  cy="12" r="1"/><circle cx="9"  cy="19" r="1"/>
-      <circle cx="15" cy="5"  r="1"/><circle cx="15" cy="12" r="1"/><circle cx="15" cy="19" r="1"/>
-    </svg>
-  );
-}
-
-/*
- * PlanningSection — mirrors #page-planning from project.html + planning.js
- *
- * Steps are stored as React state. Drag-and-drop reorder uses native HTML5
- * drag events, same as the original.
- *
- * Props:
- *  activeVersion — string for version badge
- *  onCreateReport — fn() navigate to Report
- *  isActive — boolean
- */
 export default function PlanningSection({ activeVersion, projectId, onCreateReport, isActive }) {
-  const [steps, setSteps] = useState([]);
+  // Extracted CAED context from the project
+  const [extractedContext, setExtractedContext] = useState(null);
+  const [contextLoading, setContextLoading] = useState(false);
+
+  // Process plan state
+  const [processPlan, setProcessPlan] = useState(null);
+  const [planLoading, setPlanLoading] = useState(false);
+  const [generating, setGenerating] = useState(false);
+  const [errorMsg, setErrorMsg] = useState(null);
+
+  // Bot strip state
   const [ppBotOpen, setPpBotOpen] = useState(false);
   const [ppBotMessages, setPpBotMessages] = useState([]);
   const [ppBotInput, setPpBotInput] = useState('');
   const [ppBotLoading, setPpBotLoading] = useState(false);
   const ppMsgsEndRef = useRef(null);
-  const dragSrcIdRef = useRef(null);
 
+  // Load project context and existing process plan on activation
   useEffect(() => {
     if (!isActive || !projectId) return;
 
-    fetch(`http://localhost:3000/api/projects/${projectId}/conversations`)
-      .then(response => response.json())
-      .then(payload => {
-        if (payload.success === false) throw new Error(payload.message || 'Unable to load planning conversation');
-        const conversation = (payload.data || []).find(item => item.type === 'PLANNING');
-        setPpBotMessages((conversation?.messages || []).map(message => ({
-          role: message.role === 'assistant' ? 'ai' : 'user',
-          text: message.content,
-        })));
-      })
-      .catch(() => setPpBotMessages([]));
+    fetchExtractedContext();
+    fetchCurrentPlan();
+    fetchConversations();
   }, [isActive, projectId]);
 
   useEffect(() => {
@@ -52,69 +33,155 @@ export default function PlanningSection({ activeVersion, projectId, onCreateRepo
     }
   }, [ppBotMessages, ppBotLoading]);
 
-  const stepCount = steps.length;
-  const stepCountLabel = stepCount === 0 ? '0 steps' : `${stepCount} step${stepCount > 1 ? 's' : ''}`;
-
-  /* ── Step management ── */
-  function addStep() {
-    const id = Date.now();
-    setSteps(prev => [...prev, { id, op: '', machine: '', tool: '', params: '', dur: '' }]);
+  // ── Fetch Extracted CAD Context ──────────────────────────────────────────
+  async function fetchExtractedContext() {
+    setContextLoading(true);
+    try {
+      const res = await fetch(`http://localhost:3000/api/projects/${projectId}/engineering/context`);
+      const json = await res.json();
+      if (res.ok && json.success && json.data) {
+        setExtractedContext(json.data.contextData || json.data);
+      } else {
+        setExtractedContext(null);
+      }
+    } catch (e) {
+      console.warn('Could not load extracted context:', e);
+      setExtractedContext(null);
+    } finally {
+      setContextLoading(false);
+    }
   }
 
-  function deleteStep(id) {
-    setSteps(prev => prev.filter(s => s.id !== id));
+  // ── Fetch Existing Process Plan ──────────────────────────────────────────
+  async function fetchCurrentPlan() {
+    setPlanLoading(true);
+    try {
+      const res = await fetch(`http://localhost:3000/api/projects/${projectId}/planning/current`);
+      const json = await res.json();
+      if (res.ok && json.success && json.data?.planData) {
+        setProcessPlan(json.data.planData);
+      }
+    } catch (e) {
+      console.warn('No current process plan found:', e);
+    } finally {
+      setPlanLoading(false);
+    }
   }
 
-  function clearAllSteps() {
-    setSteps([]);
+  // ── Fetch Planning Conversation ──────────────────────────────────────────
+  async function fetchConversations() {
+    try {
+      const res = await fetch(`http://localhost:3000/api/projects/${projectId}/conversations`);
+      const json = await res.json();
+      if (res.ok && json.success) {
+        const conv = (json.data || []).find(item => item.type === 'PLANNING');
+        setPpBotMessages((conv?.messages || []).map(m => ({
+          role: m.role === 'assistant' ? 'ai' : 'user',
+          text: m.content,
+        })));
+      }
+    } catch {}
   }
 
-  function updateStepField(id, field, value) {
-    setSteps(prev => prev.map(s => s.id === id ? { ...s, [field]: value } : s));
+  // ── Action: Generate Process Plan ─────────────────────────────────────────
+  async function handleGeneratePlan() {
+    setGenerating(true);
+    setErrorMsg(null);
+
+    try {
+      const res = await fetch(`http://localhost:3000/api/projects/${projectId}/planning/generate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      });
+
+      const json = await res.json();
+      if (!res.ok || json.success === false) {
+        throw new Error(json.message || 'Process plan generation failed');
+      }
+
+      const planData = json.data?.planData || json.data;
+      setProcessPlan(planData);
+    } catch (err) {
+      setErrorMsg(err.message || 'Failed to generate process plan');
+    } finally {
+      setGenerating(false);
+    }
   }
 
-  /* ── Drag-and-drop reorder ── */
-  function handleDragStart(id) {
-    dragSrcIdRef.current = id;
+  // ── Action: Fallback / Demo Canonical Seed ────────────────────────────────
+  async function handleLoadCanonicalDemo() {
+    setGenerating(true);
+    setErrorMsg(null);
+    try {
+      const res = await fetch('http://localhost:3000/api/planning/demo/canonical-shaft');
+      const json = await res.json();
+      if (!res.ok || json.success === false) {
+        throw new Error(json.message || 'Failed to fetch canonical shaft data');
+      }
+
+      const partInput = json.data;
+      // Generate using demo planning endpoint
+      const planRes = await fetch('http://localhost:3000/api/planning/demo/analyze', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(partInput),
+      });
+      const planJson = await planRes.json();
+      if (!planRes.ok || planJson.success === false) {
+        throw new Error(planJson.message || 'Feature analysis failed');
+      }
+
+      const genRes = await fetch('http://localhost:3000/api/planning/demo/generate-process-plan', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          partInput: planJson.data.partInput,
+          interpretation: planJson.data.interpretation,
+        }),
+      });
+      const genJson = await genRes.json();
+      if (!genRes.ok || genJson.success === false) {
+        throw new Error(genJson.message || 'Process plan generation failed');
+      }
+
+      setProcessPlan(genJson.data);
+      setExtractedContext({
+        drawing: { partName: partInput.partName, partNumber: 'SGS-001', units: 'mm' },
+        material: { name: partInput.material, standard: 'AISI', condition: 'As-Received' },
+        geometry: {
+          overallDimensions: [{ type: 'DIAMETER', value: '65', unit: 'mm' }, { type: 'LENGTH', value: '320', unit: 'mm' }],
+          features: [
+            { type: 'EXTERNAL_CYLINDER', name: 'Bearing Journal', tolerance: 'h6' },
+            { type: 'KEYWAY', name: 'Torque Transmission Keyway' },
+            { type: 'THREAD_EXTERNAL', name: 'Single-Point Retention Thread' },
+            { type: 'CIRCLIP_GROOVE', name: 'Axial Retention Grooves' },
+            { type: 'RADIAL_HOLE', name: 'Lubrication Holes' },
+          ],
+        },
+        manufacturingNotes: { generalNotes: [partInput.description] },
+      });
+    } catch (err) {
+      setErrorMsg(`Demo run error: ${err.message}`);
+    } finally {
+      setGenerating(false);
+    }
   }
 
-  function handleDrop(targetId) {
-    const srcId = dragSrcIdRef.current;
-    if (!srcId || srcId === targetId) return;
-    setSteps(prev => {
-      const arr = [...prev];
-      const si = arr.findIndex(s => s.id === srcId);
-      const di = arr.findIndex(s => s.id === targetId);
-      const [moved] = arr.splice(si, 1);
-      arr.splice(di, 0, moved);
-      return arr;
-    });
-    dragSrcIdRef.current = null;
-  }
-
-  /* ── Download CSV ── */
-  function downloadPlan() {
-    if (steps.length === 0) return;
-    const headers = ['#', 'Operation', 'Machine/Process', 'Tool/Fixture', 'Parameters', 'Duration'];
-    const rows = steps.map((s, i) => [
-      i + 1,
-      `"${(s.op     || '').replace(/"/g, '""')}"`,
-      `"${(s.machine|| '').replace(/"/g, '""')}"`,
-      `"${(s.tool   || '').replace(/"/g, '""')}"`,
-      `"${(s.params || '').replace(/"/g, '""')}"`,
-      `"${(s.dur    || '').replace(/"/g, '""')}"`,
-    ]);
-    const csv = [headers, ...rows].map(r => r.join(',')).join('\n');
-    const blob = new Blob([csv], { type: 'text/csv' });
+  // ── Action: Export Plan JSON ──
+  function handleExportJson() {
+    if (!processPlan) return;
+    const partTitle = extractedContext?.drawing?.partName || 'process_plan';
+    const blob = new Blob([JSON.stringify(processPlan, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = 'process_plan.csv';
+    a.download = `${partTitle.replace(/\s+/g, '_')}_process_plan.json`;
     a.click();
     URL.revokeObjectURL(url);
   }
 
-  /* ── PP Bot ── */
+  // ── Bot Message Sender ──
   async function sendPpBotMessage(e) {
     if (e && e.key && e.key !== 'Enter') return;
     const text = ppBotInput.trim();
@@ -125,10 +192,10 @@ export default function PlanningSection({ activeVersion, projectId, onCreateRepo
     setPpBotLoading(true);
 
     try {
-      const response = await fetch(`http://localhost:3000/api/projects/${projectId}/conversations`, {
+      const response = await fetch(`http://localhost:3000/api/projects/${projectId}/planning/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ type: 'PLANNING', message: text }),
+        body: JSON.stringify({ message: text }),
       });
       const payload = await response.json();
       if (!response.ok || payload.success === false) {
@@ -145,251 +212,445 @@ export default function PlanningSection({ activeVersion, projectId, onCreateRepo
     }
   }
 
+  const drawing = extractedContext?.drawing || {};
+  const materialObj = extractedContext?.material || {};
+  const geometry = extractedContext?.geometry || {};
+  const featuresList = geometry?.features || [];
+  const overallDims = geometry?.overallDimensions || [];
+  const tolerancesObj = extractedContext?.tolerances || {};
+  const notesList = extractedContext?.manufacturingNotes?.generalNotes || [];
+
   return (
     <section className={`page-section${isActive ? ' active' : ''}`} id="page-planning">
-
       {/* Header */}
       <div className="page-header">
         <div className="page-header__left">
           <h2 className="page-section-title">Process Planning</h2>
-          <p className="page-section-sub">Define and sequence the manufacturing operations</p>
+          <p className="page-section-sub">
+            Ontology-grounded process reasoning from your extracted CAED drawing
+          </p>
         </div>
-        <div className="page-header__right">
+        <div className="page-header__right" style={{ display: 'flex', gap: '8px' }}>
+          {processPlan && (
+            <button className="demo-btn-canonical" onClick={handleExportJson} title="Export Process Plan as JSON">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                <polyline points="7 10 12 15 17 10"/>
+                <line x1="12" y1="15" x2="12" y2="3"/>
+              </svg>
+              Export JSON
+            </button>
+          )}
+          <button
+            className="demo-btn-primary"
+            onClick={handleGeneratePlan}
+            disabled={generating || contextLoading}
+            style={{ padding: '8px 18px', fontSize: '12.5px' }}
+          >
+            {generating ? (
+              <>
+                <svg className="spinner" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                  <circle cx="12" cy="12" r="10" strokeWidth="4" strokeDasharray="30 60" />
+                </svg>
+                Generating Plan...
+              </>
+            ) : processPlan ? (
+              'Regenerate Process Plan'
+            ) : (
+              'Generate Process Plan'
+            )}
+          </button>
         </div>
       </div>
 
-      {/* ── Process Steps Panel ── */}
-      <div className="pp-steps-panel">
+      {errorMsg && (
+        <div className="demo-callout demo-callout--error" style={{ marginBottom: '16px' }}>
+          <strong>Error:</strong> {errorMsg}
+          {!extractedContext && (
+            <div style={{ marginTop: '8px' }}>
+              <button
+                className="demo-btn-canonical"
+                onClick={handleLoadCanonicalDemo}
+                style={{ fontSize: '11px', padding: '4px 10px' }}
+              >
+                Load Canonical Shaft Template as Sample &rarr;
+              </button>
+            </div>
+          )}
+        </div>
+      )}
 
-        {/* Panel toolbar */}
-        <div className="pp-panel-toolbar">
-          <div className="pp-toolbar-left">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M9 11l3 3L22 4"/>
-              <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>
+      {/* ── CARD: EXTRACTED CAED DIAGRAM CONTEXT ── */}
+      <div className="demo-card demo-card--primary" style={{ marginBottom: '20px' }}>
+        <div className="demo-card-header">
+          <div className="demo-card-title">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+              <polyline points="14 2 14 8 20 8"/>
+              <line x1="16" y1="13" x2="8" y2="13"/>
+              <line x1="16" y1="17" x2="8" y2="17"/>
             </svg>
-            <span className="pp-panel-title">Operations Sequence</span>
-            <span className="pp-step-count" id="ppStepCount">{stepCountLabel}</span>
+            <span>Source CAED Drawing Data</span>
           </div>
-          <div className="pp-toolbar-right">
-            <button className="pp-btn-secondary" onClick={clearAllSteps} title="Clear all steps">
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <polyline points="3 6 5 6 21 6"/>
-                <path d="M19 6l-1 14H6L5 6"/>
-                <path d="M10 11v6M14 11v6"/>
-                <path d="M9 6V4h6v2"/>
-              </svg>
-              Clear
-            </button>
-            <button className="pp-btn-add" onClick={addStep}>
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <line x1="12" y1="5" x2="12" y2="19"/>
-                <line x1="5" y1="12" x2="19" y2="12"/>
-              </svg>
-              Add Step
-            </button>
+          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+            {extractedContext ? (
+              <span className="demo-badge-pill demo-badge-pill--green">Extracted CAED Context Active</span>
+            ) : (
+              <button
+                className="demo-btn-canonical"
+                onClick={handleLoadCanonicalDemo}
+                disabled={generating}
+                style={{ fontSize: '11.5px', padding: '4px 10px' }}
+              >
+                Use Canonical Shaft Template
+              </button>
+            )}
           </div>
         </div>
 
-        {/* Column headers */}
-        <div className="pp-col-head">
-          <span className="pp-col pp-col--drag"></span>
-          <span className="pp-col pp-col--num">#</span>
-          <span className="pp-col pp-col--op">Operation</span>
-          <span className="pp-col pp-col--machine">Machine / Process</span>
-          <span className="pp-col pp-col--tool">Tool / Fixture</span>
-          <span className="pp-col pp-col--params">Parameters</span>
-          <span className="pp-col pp-col--duration">Duration</span>
-          <span className="pp-col pp-col--action"></span>
-        </div>
+        {contextLoading ? (
+          <div style={{ padding: '16px', textAlign: 'center', color: 'var(--text-secondary)' }}>
+            Loading extracted drawing context...
+          </div>
+        ) : extractedContext ? (
+          <div>
+            <div className="demo-grid-3col" style={{ marginBottom: '12px' }}>
+              <div style={{ background: 'rgba(255,255,255,0.02)', padding: '10px 12px', borderRadius: '6px', border: '1px solid var(--border-faint)' }}>
+                <span className="demo-label" style={{ display: 'block', marginBottom: '3px' }}>Part Identity</span>
+                <strong style={{ fontSize: '13px', color: 'var(--text-primary)' }}>
+                  {drawing.partName || 'Unnamed Part'}
+                </strong>
+                {drawing.partNumber && (
+                  <div style={{ fontSize: '11px', color: 'var(--text-secondary)', marginTop: '2px' }}>
+                    Part #: {drawing.partNumber} ({drawing.drawingType || 'Engineering Drawing'})
+                  </div>
+                )}
+              </div>
 
-        {/* Steps list */}
-        <div className="pp-steps-list" id="ppStepsList">
-          {/* Empty state */}
-          {steps.length === 0 && (
-            <div className="pp-empty-state" id="ppEmptyState">
-              <svg width="38" height="38" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round">
-                <rect x="3" y="3" width="18" height="18" rx="2"/>
-                <line x1="3" y1="9" x2="21" y2="9"/>
-                <line x1="3" y1="15" x2="21" y2="15"/>
-                <line x1="9" y1="9" x2="9" y2="21"/>
+              <div style={{ background: 'rgba(255,255,255,0.02)', padding: '10px 12px', borderRadius: '6px', border: '1px solid var(--border-faint)' }}>
+                <span className="demo-label" style={{ display: 'block', marginBottom: '3px' }}>Material Specification</span>
+                <strong style={{ fontSize: '13px', color: '#c7d2fe' }}>
+                  {materialObj.name || materialObj.grade || 'Specified on Drawing'}
+                </strong>
+                <div style={{ fontSize: '11px', color: 'var(--text-secondary)', marginTop: '2px' }}>
+                  Standard: {materialObj.standard || 'AISI / ISO'} | Condition: {materialObj.condition || 'As-received'}
+                </div>
+              </div>
+
+              <div style={{ background: 'rgba(255,255,255,0.02)', padding: '10px 12px', borderRadius: '6px', border: '1px solid var(--border-faint)' }}>
+                <span className="demo-label" style={{ display: 'block', marginBottom: '3px' }}>Overall Stock &amp; Dimensions</span>
+                <strong style={{ fontSize: '13px', color: '#fed7aa' }}>
+                  {overallDims.length > 0
+                    ? overallDims.map((d) => `${d.type || d.dimensionType || ''}: ${d.value || d.nominal || ''}${d.unit || 'mm'}`).join(' × ')
+                    : 'From CAD Geometry'}
+                </strong>
+                <div style={{ fontSize: '11px', color: 'var(--text-secondary)', marginTop: '2px' }}>
+                  Tolerance: {tolerancesObj.generalTolerance?.value || 'Standard Shop Tolerance'}
+                </div>
+              </div>
+            </div>
+
+            {/* Extracted Features List */}
+            {featuresList.length > 0 && (
+              <div style={{ marginTop: '8px' }}>
+                <span className="demo-label" style={{ display: 'block', marginBottom: '6px' }}>
+                  Detected Manufacturing Features ({featuresList.length})
+                </span>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                  {featuresList.slice(0, 10).map((f, i) => (
+                    <span key={i} className="demo-badge-pill demo-badge-pill--blue" style={{ fontSize: '11px' }}>
+                      {f.name || f.type || `Feature ${i + 1}`}
+                      {f.tolerance ? ` (${f.tolerance})` : f.nominal ? ` [${f.nominal}]` : ''}
+                    </span>
+                  ))}
+                  {featuresList.length > 10 && (
+                    <span className="demo-badge-pill" style={{ fontSize: '11px' }}>
+                      +{featuresList.length - 10} more
+                    </span>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        ) : (
+          <div style={{ padding: '14px', background: 'rgba(234, 179, 8, 0.05)', borderRadius: '6px', border: '1px solid rgba(234, 179, 8, 0.2)' }}>
+            <p style={{ margin: '0 0 6px 0', fontSize: '13px', color: '#fde047' }}>
+              No CAED diagram extracted yet for this project.
+            </p>
+            <p style={{ margin: 0, fontSize: '12px', color: 'var(--text-secondary)' }}>
+              Go to the <strong>Extraction</strong> section to upload and verify a CAD drawing, or click below to run the process planning engine using the canonical Stepped Gearbox Shaft pattern.
+            </p>
+            <div style={{ marginTop: '10px' }}>
+              <button className="demo-btn-canonical" onClick={handleLoadCanonicalDemo} disabled={generating}>
+                Load Canonical Shaft Template &amp; Run Planning &rarr;
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* ── CARD: GENERATED PROCESS PLAN (AI OUTPUT) ── */}
+      {planLoading ? (
+        <div style={{ padding: '40px', textAlign: 'center', color: 'var(--text-secondary)' }}>
+          Loading saved process plan...
+        </div>
+      ) : processPlan ? (
+        <div className="demo-card" style={{ marginBottom: '20px', borderTop: '3px solid #6366f1' }}>
+          <div className="demo-card-header">
+            <div className="demo-card-title">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#6366f1" strokeWidth="2.5">
+                <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
               </svg>
-              <p>No operations yet.</p>
-              <span>Click <strong>Add Step</strong> to define the first manufacturing operation.</span>
+              <span>Manufacturing Process Plan</span>
+            </div>
+            <div style={{ display: 'flex', gap: '8px' }}>
+              <span className="demo-badge-pill demo-badge-pill--green">
+                {(processPlan.setups || []).length} Setups Planned
+              </span>
+            </div>
+          </div>
+
+          {/* DYNAMIC VISUAL PROCESS FLOW */}
+          <div style={{ marginBottom: '16px' }}>
+            <span className="demo-label" style={{ marginBottom: '6px', display: 'block' }}>
+              Dynamic State &amp; Setup Sequence Flow
+            </span>
+            <div className="demo-flow-container">
+              <div className="demo-flow-node demo-flow-node--raw">
+                <span style={{ fontSize: '10px', color: 'var(--text-tertiary)', textTransform: 'uppercase' }}>Input State</span>
+                <strong style={{ fontSize: '13px', color: '#e2e8f0' }}>RAW MATERIAL</strong>
+                <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
+                  {drawing.partName || 'Stock Bar'}
+                </span>
+              </div>
+
+              {(processPlan.setups || []).map((s, idx) => (
+                <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                  <div className="demo-flow-arrow">&rarr;</div>
+                  <div className="demo-flow-node demo-flow-node--setup">
+                    <span style={{ fontSize: '10px', color: 'var(--text-tertiary)', textTransform: 'uppercase' }}>
+                      Setup {s.sequence}
+                    </span>
+                    <strong style={{ fontSize: '12.5px', color: '#c7d2fe' }}>
+                      {s.machineRequirement?.category || 'CNC SETUP'}
+                    </strong>
+                    <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
+                      {s.operations?.length || 0} Ops
+                    </span>
+                  </div>
+                </div>
+              ))}
+
+              {processPlan.heatTreatment?.length > 0 && (
+                <>
+                  <div className="demo-flow-arrow">&rarr;</div>
+                  <div className="demo-flow-node demo-flow-node--ht">
+                    <span style={{ fontSize: '10px', color: 'var(--text-tertiary)', textTransform: 'uppercase' }}>Thermal Process</span>
+                    <strong style={{ fontSize: '12.5px', color: '#fde68a' }}>HEAT TREATMENT</strong>
+                    <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
+                      {processPlan.heatTreatment[0]?.type || 'Hardening'}
+                    </span>
+                  </div>
+                </>
+              )}
+
+              <div className="demo-flow-arrow">&rarr;</div>
+              <div className="demo-flow-node demo-flow-node--finish">
+                <span style={{ fontSize: '10px', color: 'var(--text-tertiary)', textTransform: 'uppercase' }}>Final State</span>
+                <strong style={{ fontSize: '13px', color: '#a7f3d0' }}>PRECISION FINISHED</strong>
+                <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>Verified &amp; Inspected</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Strategy Summary */}
+          {processPlan.planningSummary && (
+            <div style={{ padding: '12px 16px', background: 'rgba(99,102,241,0.06)', borderRadius: '6px', border: '1px solid rgba(99,102,241,0.2)', marginBottom: '18px' }}>
+              <span className="demo-label" style={{ color: '#818cf8', marginBottom: '4px', display: 'block' }}>Process Strategy Summary</span>
+              <p style={{ margin: 0, fontSize: '13px', lineHeight: '1.6', color: 'var(--text-primary)' }}>
+                {processPlan.planningSummary}
+              </p>
             </div>
           )}
 
-          {steps.map((step, idx) => (
-            <div
-              key={step.id}
-              className="pp-step-row"
-              draggable
-              onDragStart={() => handleDragStart(step.id)}
-              onDragOver={(e) => e.preventDefault()}
-              onDrop={() => handleDrop(step.id)}
-            >
-              {/* Drag handle */}
-              <div className="pp-drag-handle" title="Drag to reorder">
-                <DragHandle />
-              </div>
-              {/* Step number */}
-              <span className="pp-step-num">{String(idx + 1).padStart(2, '0')}</span>
-              {/* Editable cells */}
-              <span
-                className="pp-cell"
-                contentEditable
-                suppressContentEditableWarning
-                data-field="op"
-                data-placeholder="e.g. Rough Milling"
-                onBlur={(e) => updateStepField(step.id, 'op', e.currentTarget.textContent.trim())}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') { e.preventDefault(); e.target.blur(); }
-                  if (e.key === 'Tab') {
-                    e.preventDefault();
-                    const cells = Array.from(e.target.closest('.pp-step-row').querySelectorAll('.pp-cell'));
-                    const i = cells.indexOf(e.target);
-                    if (!e.shiftKey && i === cells.length - 1) { addStep(); }
-                    else if (!e.shiftKey) cells[i + 1].focus();
-                    else (cells[i - 1] || cells[cells.length - 1]).focus();
-                  }
+          {/* Setups and Operations */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+            {(processPlan.setups || []).map((setup, sIdx) => (
+              <div
+                key={sIdx}
+                style={{
+                  background: 'rgba(255,255,255,0.02)',
+                  border: '1px solid var(--border-default)',
+                  borderRadius: '8px',
+                  padding: '14px',
                 }}
-              >{step.op}</span>
-              <span
-                className="pp-cell"
-                contentEditable
-                suppressContentEditableWarning
-                data-field="machine"
-                data-placeholder="e.g. CNC 5-Axis"
-                onBlur={(e) => updateStepField(step.id, 'machine', e.currentTarget.textContent.trim())}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') { e.preventDefault(); e.target.blur(); }
-                  if (e.key === 'Tab') {
-                    e.preventDefault();
-                    const cells = Array.from(e.target.closest('.pp-step-row').querySelectorAll('.pp-cell'));
-                    const i = cells.indexOf(e.target);
-                    if (!e.shiftKey && i === cells.length - 1) { addStep(); }
-                    else if (!e.shiftKey) cells[i + 1].focus();
-                    else (cells[i - 1] || cells[cells.length - 1]).focus();
-                  }
-                }}
-              >{step.machine}</span>
-              <span
-                className="pp-cell"
-                contentEditable
-                suppressContentEditableWarning
-                data-field="tool"
-                data-placeholder="e.g. Ø16 End Mill"
-                onBlur={(e) => updateStepField(step.id, 'tool', e.currentTarget.textContent.trim())}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') { e.preventDefault(); e.target.blur(); }
-                  if (e.key === 'Tab') {
-                    e.preventDefault();
-                    const cells = Array.from(e.target.closest('.pp-step-row').querySelectorAll('.pp-cell'));
-                    const i = cells.indexOf(e.target);
-                    if (!e.shiftKey && i === cells.length - 1) { addStep(); }
-                    else if (!e.shiftKey) cells[i + 1].focus();
-                    else (cells[i - 1] || cells[cells.length - 1]).focus();
-                  }
-                }}
-              >{step.tool}</span>
-              <span
-                className="pp-cell"
-                contentEditable
-                suppressContentEditableWarning
-                data-field="params"
-                data-placeholder="e.g. 2500 rpm, 0.2 ap"
-                onBlur={(e) => updateStepField(step.id, 'params', e.currentTarget.textContent.trim())}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') { e.preventDefault(); e.target.blur(); }
-                  if (e.key === 'Tab') {
-                    e.preventDefault();
-                    const cells = Array.from(e.target.closest('.pp-step-row').querySelectorAll('.pp-cell'));
-                    const i = cells.indexOf(e.target);
-                    if (!e.shiftKey && i === cells.length - 1) { addStep(); }
-                    else if (!e.shiftKey) cells[i + 1].focus();
-                    else (cells[i - 1] || cells[cells.length - 1]).focus();
-                  }
-                }}
-              >{step.params}</span>
-              <span
-                className="pp-cell"
-                contentEditable
-                suppressContentEditableWarning
-                data-field="dur"
-                data-placeholder="e.g. 45 min"
-                onBlur={(e) => updateStepField(step.id, 'dur', e.currentTarget.textContent.trim())}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') { e.preventDefault(); e.target.blur(); }
-                  if (e.key === 'Tab') {
-                    e.preventDefault();
-                    const cells = Array.from(e.target.closest('.pp-step-row').querySelectorAll('.pp-cell'));
-                    const i = cells.indexOf(e.target);
-                    if (!e.shiftKey && i === cells.length - 1) { addStep(); }
-                    else if (!e.shiftKey) cells[i + 1].focus();
-                    else (cells[i - 1] || cells[cells.length - 1]).focus();
-                  }
-                }}
-              >{step.dur}</span>
-              {/* Delete */}
-              <button className="pp-row-del" onClick={() => deleteStep(step.id)} title="Remove step">
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <line x1="18" y1="6" x2="6" y2="18"/>
-                  <line x1="6" y1="6" x2="18" y2="18"/>
-                </svg>
-              </button>
-            </div>
-          ))}
-        </div>
+              >
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px', flexWrap: 'wrap', gap: '8px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <span className="demo-step-badge" style={{ background: '#4f46e5' }}>{setup.sequence}</span>
+                    <strong style={{ fontSize: '13.5px', color: 'var(--text-primary)' }}>{setup.setupPurpose}</strong>
+                  </div>
+                  <div style={{ display: 'flex', gap: '6px' }}>
+                    <span className="demo-badge-pill demo-badge-pill--purple">
+                      Machine Req: {setup.machineRequirement?.category || 'Any CNC'}
+                    </span>
+                    <span className="demo-badge-pill demo-badge-pill--yellow">
+                      Workholding: {setup.workholdingRequirement?.type || 'Standard Fixture'}
+                    </span>
+                  </div>
+                </div>
 
-      </div>{/* end .pp-steps-panel */}
+                <div className="demo-table-wrap">
+                  <table className="demo-table">
+                    <thead>
+                      <tr>
+                        <th style={{ width: '35px' }}>#</th>
+                        <th>Operation</th>
+                        <th>Process Family / Stage</th>
+                        <th>Target Features</th>
+                        <th>State Transition</th>
+                        <th>Tooling Req.</th>
+                        <th>Inspection / QC</th>
+                        <th>Engineering Reason</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(setup.operations || []).map((op, oIdx) => (
+                        <tr key={oIdx}>
+                          <td><strong>{op.sequence}</strong></td>
+                          <td><strong>{op.operationName}</strong></td>
+                          <td>
+                            <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
+                              <span className="demo-badge-pill demo-badge-pill--blue">{op.processFamily}</span>
+                              <span className="demo-badge-pill demo-badge-pill--green">{op.processStage}</span>
+                            </div>
+                          </td>
+                          <td>
+                            {(op.targetFeatures || []).map((t, ti) => (
+                              <span key={ti} className="demo-badge-pill" style={{ marginRight: '4px' }}>{t}</span>
+                            ))}
+                          </td>
+                          <td style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
+                            {op.inputState} &rarr; {op.outputState}
+                          </td>
+                          <td style={{ fontSize: '11px' }}>
+                            {op.toolRequirement?.category || op.toolRequirement?.material || 'Standard Tooling'}
+                          </td>
+                          <td style={{ fontSize: '11px' }}>
+                            {op.measurementRequirement?.instrument || (op.measurementRequirement?.postOperation ? 'Post-Op Check' : 'Visual')}
+                          </td>
+                          <td style={{ fontSize: '11px', color: 'var(--text-secondary)', maxWidth: '240px' }}>
+                            {op.reason}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Thermal Processing & Quality Checkpoints */}
+          {(processPlan.heatTreatment?.length > 0 || processPlan.qualityCheckpoints?.length > 0) && (
+            <div className="demo-grid-2col" style={{ marginTop: '16px' }}>
+              {processPlan.heatTreatment?.length > 0 && (
+                <div style={{ background: 'rgba(245,158,11,0.05)', border: '1px solid rgba(245,158,11,0.2)', padding: '12px', borderRadius: '6px' }}>
+                  <h4 style={{ margin: '0 0 8px 0', fontSize: '12px', color: '#fbbf24', textTransform: 'uppercase' }}>
+                    Thermal Processing (Heat Treatment)
+                  </h4>
+                  {processPlan.heatTreatment.map((ht, i) => (
+                    <div key={i} style={{ fontSize: '12px', color: 'var(--text-primary)', marginBottom: '4px' }}>
+                      <strong>{ht.type}</strong> — Distortion Risk: <span style={{ color: '#f87171' }}>{ht.distortionRisk || 'MEDIUM'}</span>
+                      {ht.timing && <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>Timing: {ht.timing}</div>}
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {processPlan.qualityCheckpoints?.length > 0 && (
+                <div style={{ background: 'rgba(16,185,129,0.05)', border: '1px solid rgba(16,185,129,0.2)', padding: '12px', borderRadius: '6px' }}>
+                  <h4 style={{ margin: '0 0 8px 0', fontSize: '12px', color: '#34d399', textTransform: 'uppercase' }}>
+                    Quality Assurance Checkpoints
+                  </h4>
+                  {processPlan.qualityCheckpoints.map((qc, i) => (
+                    <div key={i} style={{ fontSize: '12px', color: 'var(--text-primary)', marginBottom: '4px' }}>
+                      <strong>{qc.triggerStage || 'Final Inspection'}</strong>: {qc.inspectionMethod || qc.acceptanceCriteria}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Process Warnings & Assumptions */}
+          {(processPlan.warnings?.length > 0 || processPlan.assumptions?.length > 0) && (
+            <div className="demo-grid-2col" style={{ marginTop: '14px' }}>
+              {processPlan.warnings?.length > 0 && (
+                <div className="demo-callout demo-callout--warn">
+                  <strong>Process Warnings / Risks:</strong>
+                  <ul style={{ margin: '4px 0 0 16px', padding: 0 }}>
+                    {processPlan.warnings.map((w, i) => <li key={i}>{w}</li>)}
+                  </ul>
+                </div>
+              )}
+              {processPlan.assumptions?.length > 0 && (
+                <div className="demo-callout demo-callout--info">
+                  <strong>Process Assumptions:</strong>
+                  <ul style={{ margin: '4px 0 0 16px', padding: 0 }}>
+                    {processPlan.assumptions.map((a, i) => <li key={i}>{a}</li>)}
+                  </ul>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      ) : null}
 
       {/* ── Bottom row: Bot strip + Report actions ── */}
       <div className="pp-bottom-row">
-
         {/* Bot strip (collapsible) */}
         <div className="pp-bot-strip" id="ppBotStrip">
           <div className="pp-bot-strip-header" onClick={() => setPpBotOpen(o => !o)}>
             <div className="ext-bot-avatar" style={{ width: '24px', height: '24px' }}>
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <rect x="3" y="11" width="18" height="11" rx="2"/>
                 <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
                 <circle cx="12" cy="16" r="1"/>
               </svg>
             </div>
-            <span className="pp-bot-label">C2P Bot</span>
+            <span className="pp-bot-label">C2P Planning Assistant</span>
             <span className="ext-bot-status" style={{ marginLeft: 'auto' }}>online</span>
             <svg
               className={`pp-bot-chevron${ppBotOpen ? ' open' : ''}`}
-              id="ppBotChevron"
               width="12" height="12" viewBox="0 0 24 24" fill="none"
-              stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
+              stroke="currentColor" strokeWidth="2.5"
             >
               <polyline points="18 15 12 9 6 15"/>
             </svg>
           </div>
           {ppBotOpen && (
-            <div className="pp-bot-body" id="ppBotBody" style={{ display: 'flex', flexDirection: 'column' }}>
-              <div className="pp-bot-messages" id="ppBotMessages">
+            <div className="pp-bot-body" style={{ display: 'flex', flexDirection: 'column' }}>
+              <div className="pp-bot-messages">
                 {ppBotMessages.map((msg, i) => (
                   <div key={i} className={`bot-msg bot-msg--${msg.role === 'ai' ? 'ai' : 'user'}`}>
                     <p>{msg.text}</p>
                   </div>
                 ))}
-                {ppBotLoading && <div className="bot-msg bot-msg--ai"><p>Checking the current plan and persisted context…</p></div>}
+                {ppBotLoading && <div className="bot-msg bot-msg--ai"><p>Consulting manufacturing ontology...</p></div>}
                 <div ref={ppMsgsEndRef} />
               </div>
               <div className="ext-bot-input-wrap" style={{ borderTop: '1px solid var(--border-faint)' }}>
                 <input
                   className="ext-bot-input"
-                  id="ppBotInput"
                   type="text"
-                  placeholder="Ask C2P Bot…"
+                  placeholder="Ask C2P Bot about setups, tooling, or GD&amp;T..."
                   value={ppBotInput}
                   onChange={(e) => setPpBotInput(e.target.value)}
                   onKeyDown={sendPpBotMessage}
                 />
                 <button className="ext-bot-send" onClick={() => sendPpBotMessage({ key: 'Enter' })}>
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                     <line x1="22" y1="2" x2="11" y2="13"/>
                     <polygon points="22 2 15 22 11 13 2 9 22 2"/>
                   </svg>
@@ -402,34 +663,25 @@ export default function PlanningSection({ activeVersion, projectId, onCreateRepo
         {/* Report actions */}
         <div className="pp-report-actions">
           <div className="pp-report-info">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
               <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
               <polyline points="14 2 14 8 20 8"/>
             </svg>
-            <span className="pp-report-info-text">Generate final report from<br />this process plan</span>
+            <span className="pp-report-info-text">Ready to finalize?<br />Generate manufacturing report</span>
           </div>
           <div className="pp-report-btns">
             <button className="pp-btn-create-report" onClick={onCreateReport}>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
                 <polyline points="14 2 14 8 20 8"/>
                 <line x1="16" y1="13" x2="8" y2="13"/>
                 <line x1="16" y1="17" x2="8" y2="17"/>
               </svg>
-              Create Report
-            </button>
-            <button className="pp-btn-download" onClick={downloadPlan} title="Download plan as CSV">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-                <polyline points="7 10 12 15 17 10"/>
-                <line x1="12" y1="15" x2="12" y2="3"/>
-              </svg>
+              Proceed to Report
             </button>
           </div>
         </div>
-
-      </div>{/* end .pp-bottom-row */}
-
+      </div>
     </section>
   );
 }

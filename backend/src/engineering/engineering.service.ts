@@ -23,8 +23,8 @@ import { ProjectsService } from '../projects/projects.service';
 import { JobsService } from '../jobs/jobs.service';
 import { WorkflowService } from '../workflow/workflow.service';
 import { ContextValidationService } from './services/context-validation.service';
-import { GeminiExtractionService } from './extraction/gemini-extraction.service';
-import { GeminiProvider } from '../ai/providers/gemini.provider';
+import { ClaudeExtractionService } from './extraction/claude-extraction.service';
+import { ClaudeProvider } from '../ai/providers/claude.provider';
 import { emptyEngineeringContextData, EngineeringContextData } from './interfaces/engineering-context.types';
 
 @Injectable()
@@ -36,8 +36,8 @@ export class EngineeringService {
     private readonly jobsService: JobsService,
     private readonly workflowService: WorkflowService,
     private readonly contextValidationService: ContextValidationService,
-    private readonly geminiExtractionService: GeminiExtractionService,
-    private readonly geminiProvider: GeminiProvider,
+    private readonly claudeExtractionService: ClaudeExtractionService,
+    private readonly claudeProvider: ClaudeProvider,
   ) {}
 
   // ── Utility ─────────────────────────────────────────────────────────────────
@@ -50,7 +50,7 @@ export class EngineeringService {
 
   /**
    * Full extraction from uploaded files.
-   * All files are treated as ONE product — one Gemini call, one EXTRACTED context.
+  * All files are treated as ONE product — one Claude pipeline, one EXTRACTED context.
    */
   async extractFromFiles(
     projectId: string,
@@ -58,7 +58,7 @@ export class EngineeringService {
   ): Promise<ContextDocument> {
     await this.projectsService.findById(projectId);
 
-    const { contextData } = await this.geminiExtractionService.extractFromFiles(files);
+    const { contextData } = await this.claudeExtractionService.extractFromFiles(files);
     return this.storeExtractedContext(projectId, { contextData });
   }
 
@@ -81,7 +81,7 @@ export class EngineeringService {
   }
 
   /**
-   * Called by the extraction pipeline (Gemini) once extraction is done.
+  * Called by the extraction pipeline (Claude) once extraction is done.
    * Creates a new EXTRACTED context document — never overwrites previous ones.
    */
   async storeExtractedContext(
@@ -283,11 +283,16 @@ export class EngineeringService {
     if (!conv) throw new NotFoundException('Conversation not found');
     return conv;
   }
-
   async sendMessage(projectId: string, dto: SendMessageDto) {
     await this.projectsService.findById(projectId);
 
     const context = await this.getLatestValidContext(projectId);
+    const contextData = context?.contextData ?? null;
+
+    // Run validation so bot knows exactly what is missing
+    const validation = contextData
+      ? this.contextValidationService.validate(contextData as any)
+      : { status: 'NOT_READY', missingRequiredFields: ['No context extracted yet'], warnings: [] };
 
     let conversation = await this.conversationModel
       .findOne({ projectId: new Types.ObjectId(projectId), type: dto.type })
@@ -302,32 +307,140 @@ export class EngineeringService {
       });
     }
 
-    conversation.messages.push({ role: 'user', content: dto.message, timestamp: new Date() });
+    const isInit = dto.message.trim() === '__INIT__';
+    if (!isInit) {
+      conversation.messages.push({ role: 'user', content: dto.message, timestamp: new Date() });
+    }
 
-    const history = conversation.messages.slice(-12).map(message => ({
-      role: message.role,
-      content: message.content,
+    const history = conversation.messages.slice(-14).map(m => ({
+      role: m.role,
+      content: m.content,
     }));
-    const response = await this.geminiProvider.generate({
-      systemPrompt: [
-        'You are the C2P engineering assistant.',
-        `You are assisting with the ${dto.type.toLowerCase()} workflow.`,
-        'Answer using only the persisted engineering context below and the conversation history.',
-        'Never invent dimensions, materials, tolerances, confidence values, or process data.',
-        'If the context does not contain an answer, say that it is not available.',
-        'Do not claim to persist a change. For changes, instruct the user to edit the extracted value and use the existing confirmation action.',
-        `Persisted engineering context: ${JSON.stringify(context?.contextData ?? null)}`,
-      ].join('\n'),
-      prompt: JSON.stringify({ history, message: dto.message }),
-      temperature: 0.2,
-      maxTokens: 800,
-    });
-    conversation.messages.push({
-      role: 'assistant',
-      content: response.content,
-      timestamp: new Date(),
-    });
 
+    // ── System prompt (used for normal messages only) ──────────────────────────
+    const cd = contextData as any;
+    const extractedSummary = contextData ? [
+      `Drawing: ${cd.drawing?.partName ?? 'Unknown'} | ${cd.drawing?.partNumber ?? ''} | Type: ${cd.drawing?.drawingType ?? 'UNKNOWN'} | Units: ${cd.drawing?.units ?? '?'}`,
+      `Material: ${cd.material?.name ?? 'not extracted'} | Grade: ${cd.material?.grade ?? '—'} | Standard: ${cd.material?.standard ?? '—'}`,
+      `Geometry: ${(cd.geometry?.overallDimensions ?? []).length} overall dims, ${(cd.geometry?.features ?? []).length} features`,
+      `Tolerances: General = ${cd.tolerances?.generalTolerance?.value ?? 'none'} | GD&T: ${(cd.tolerances?.geometricTolerances ?? []).length} entries`,
+    ].join('\n') : 'No context extracted yet.';
+
+    const missingBlock = validation.missingRequiredFields.length > 0
+      ? `MISSING REQUIRED FIELDS:\n${validation.missingRequiredFields.map(f => `  • ${f}`).join('\n')}`
+      : 'All required fields present — ready for process planning.';
+
+    const systemPrompt = [
+      'You are the C2P Engineering Assistant for mechanical manufacturing process planning.',
+      'You help engineers review and complete AI-extracted CAED engineering drawing data.',
+      '',
+      '── RESPONSE FORMAT ─────────────────────────────────────────────────────────',
+      'Always respond with valid JSON exactly like this:',
+      '{ "reply": "your message to the user", "corrections": { ... } or null }',
+      '',
+      'corrections structure (only include sections the user explicitly stated):',
+      '{ "material": { "name": "...", "grade": "...", "standard": "...", "condition": "..." },',
+      '  "drawing": { "partName": "...", "partNumber": "...", "units": "...", "drawingType": "..." },',
+      '  "tolerances": { "generalTolerance": { "value": "...", "appliesUnlessSpecified": true } } }',
+      '',
+      'Set corrections to null when the user is asking a question, not providing a value.',
+      'ONLY include fields the user explicitly stated — do not fill in others.',
+      '',
+      '── BEHAVIOUR ───────────────────────────────────────────────────────────────',
+      '1. When user provides a value for a field: put it in corrections, confirm it in reply.',
+      '2. After applying a correction: ask "Anything else to change, or shall we proceed to process planning?"',
+      '3. Answer questions using the full context. Never invent values.',
+      '4. Be concise and professional. No markdown in reply text.',
+      '',
+      '── EXTRACTED CONTEXT ───────────────────────────────────────────────────────',
+      extractedSummary,
+      `Status: ${validation.status}`,
+      missingBlock,
+      '',
+      '── FULL CONTEXT JSON ───────────────────────────────────────────────────────',
+      JSON.stringify(contextData),
+    ].filter(Boolean).join('\n');
+
+    // ── __INIT__: build opening message directly without calling Claude ────────
+    let replyText: string;
+
+    if (isInit) {
+      const extractedLines: string[] = [];
+      if (cd?.drawing?.partName)    extractedLines.push(`Part Name: ${cd.drawing.partName}`);
+      if (cd?.drawing?.partNumber)  extractedLines.push(`Part Number: ${cd.drawing.partNumber}`);
+      if (cd?.drawing?.drawingType) extractedLines.push(`Drawing Type: ${cd.drawing.drawingType}`);
+      if (cd?.drawing?.units)       extractedLines.push(`Units: ${cd.drawing.units}`);
+      if (cd?.material?.name)       extractedLines.push(`Material: ${cd.material.name}${cd.material?.grade ? ' ' + cd.material.grade : ''}`);
+      if (cd?.material?.standard)   extractedLines.push(`Material Standard: ${cd.material.standard}`);
+      if (cd?.tolerances?.generalTolerance?.value) {
+        extractedLines.push(`General Tolerance: ${cd.tolerances.generalTolerance.value}`);
+      }
+      const dimCount  = (cd?.geometry?.overallDimensions ?? []).length;
+      const featCount = (cd?.geometry?.features ?? []).length;
+      const gdtCount  = (cd?.tolerances?.geometricTolerances ?? []).length;
+      if (dimCount > 0)  extractedLines.push(`Overall Dimensions: ${dimCount} extracted`);
+      if (featCount > 0) extractedLines.push(`Manufacturing Features: ${featCount} identified`);
+      if (gdtCount > 0)  extractedLines.push(`GD&T Entries: ${gdtCount} extracted`);
+
+      const missing = validation.missingRequiredFields;
+      const parts: string[] = [];
+
+      if (extractedLines.length > 0) {
+        parts.push(`Extraction complete. Here is what was captured:\n${extractedLines.map(l => `  • ${l}`).join('\n')}`);
+      } else {
+        parts.push('Extraction ran but no data was confirmed from this drawing.');
+      }
+
+      if (missing.length > 0) {
+        parts.push(
+          `\nThe following required fields are missing and must be filled before process planning:\n` +
+          `${missing.map(f => `  • ${f}`).join('\n')}\n\n` +
+          `Please type each missing value — for example: "material is Aluminium 6061-T6" — and I will save it. ` +
+          `You can also edit any value directly in the table on the right.`,
+        );
+      } else {
+        parts.push('\nAll required fields are present. You can proceed to process planning, or make any corrections here first.');
+      }
+
+      parts.push('\nAsk me anything about the extracted data, or tell me what to change.');
+      replyText = parts.join('');
+
+    } else {
+      // ── Normal message: call Claude, parse JSON, apply corrections ────────────
+      const raw = await this.claudeProvider.generate({
+        systemPrompt,
+        prompt: JSON.stringify({ conversationHistory: history, userMessage: dto.message }),
+        temperature: 0.1,
+        maxTokens: 600,
+      });
+
+      let parsed: { reply: string; corrections: Record<string, any> | null } | null = null;
+      try {
+        const cleaned = raw.content
+          .replace(/^```(?:json)?\s*/i, '')
+          .replace(/\s*```\s*$/i, '')
+          .trim();
+        parsed = JSON.parse(cleaned);
+      } catch {
+        parsed = { reply: raw.content, corrections: null };
+      }
+
+      replyText = parsed?.reply ?? raw.content;
+
+      // Apply corrections Claude extracted from the user's message
+      if (parsed?.corrections && Object.keys(parsed.corrections).length > 0 && context) {
+        try {
+          await this.submitCorrection(projectId, {
+            corrections: parsed.corrections,
+            comment: 'Applied via chatbot',
+          });
+        } catch {
+          replyText += '\n(Could not auto-save — please use the Edit Values table to apply this change manually.)';
+        }
+      }
+    }
+
+    conversation.messages.push({ role: 'assistant', content: replyText, timestamp: new Date() });
     await conversation.save();
     return conversation;
   }
